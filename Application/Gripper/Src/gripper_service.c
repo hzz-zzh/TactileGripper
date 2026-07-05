@@ -20,13 +20,15 @@ typedef enum
   GRIPPER_COMMAND_HOME = 0,
   GRIPPER_COMMAND_SET_POSITION,
   GRIPPER_COMMAND_STOP,
-  GRIPPER_COMMAND_CLEAR_FAULT
+  GRIPPER_COMMAND_CLEAR_FAULT,
+  GRIPPER_COMMAND_EXTERNAL_FAULT
 } GripperCommandType_t;
 
 typedef struct
 {
   GripperCommandType_t type;
   int16_t position_permille;
+  uint32_t fault;
 } GripperCommand_t;
 
 extern UART_HandleTypeDef huart1;
@@ -65,6 +67,21 @@ static bool GripperService_SubmitCommand(GripperCommandType_t type,
   }
   command.type = type;
   command.position_permille = position_permille;
+  command.fault = GRIPPER_FAULT_NONE;
+  return osMessageQueuePut(gripperCommandQueue, &command, 0U, 0U) == osOK;
+}
+
+static bool GripperService_SubmitFault(uint32_t fault)
+{
+  GripperCommand_t command;
+
+  if (gripperCommandQueue == NULL)
+  {
+    return false;
+  }
+  command.type = GRIPPER_COMMAND_EXTERNAL_FAULT;
+  command.position_permille = 0;
+  command.fault = fault;
   return osMessageQueuePut(gripperCommandQueue, &command, 0U, 0U) == osOK;
 }
 
@@ -132,6 +149,14 @@ static void GripperService_ProcessCommand(const GripperCommand_t *command)
       }
       break;
     }
+
+    case GRIPPER_COMMAND_EXTERNAL_FAULT:
+      /*
+       * 外部通讯或安全策略只提交故障原因，具体停机动作仍由夹爪状态机统一处理。
+       */
+      GripperController_LatchExternalFault(&gripperController,
+                                           command->fault);
+      break;
 
     default:
       break;
@@ -387,6 +412,15 @@ bool GripperService_Stop(void)
 bool GripperService_ClearFaults(void)
 {
   return GripperService_SubmitCommand(GRIPPER_COMMAND_CLEAR_FAULT, 0);
+}
+
+bool GripperService_LatchExternalFault(uint32_t fault)
+{
+  if (fault == GRIPPER_FAULT_NONE)
+  {
+    return false;
+  }
+  return GripperService_SubmitFault(fault);
 }
 
 void GripperService_GetStatus(GripperStatus_t *status)

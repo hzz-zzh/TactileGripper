@@ -339,7 +339,7 @@
               <MiscControls></MiscControls>
               <Define>USE_PWR_LDO_SUPPLY,USE_HAL_DRIVER,STM32H723xx,ARM_MATH_CM7</Define>
               <Undefine></Undefine>
-              <IncludePath>../Core/Inc;../MotorControl/Inc;../Application/Gripper/Inc;../Application/StatusIndicator/Inc;../Platform/Inc;../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/Any/Inc;../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/H7xx/Inc;../Drivers/CMSIS/DSP/Include;../Drivers/STM32H7xx_HAL_Driver/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy;../Middlewares/Third_Party/FreeRTOS/Source/include;../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2;../Middlewares/Third_Party/FreeRTOS/Source/portable/RVDS/ARM_CM4F;../Drivers/CMSIS/RTOS2/Include;../Drivers/CMSIS/Device/ST/STM32H7xx/Include;../Drivers/CMSIS/Include</IncludePath>
+              <IncludePath>../Core/Inc;../MotorControl/Inc;../Application/Gripper/Inc;../Application/Communication/Inc;../Application/StatusIndicator/Inc;../Platform/Inc;../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/Any/Inc;../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/H7xx/Inc;../Drivers/CMSIS/DSP/Include;../Drivers/STM32H7xx_HAL_Driver/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy;../Middlewares/Third_Party/FreeRTOS/Source/include;../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2;../Middlewares/Third_Party/FreeRTOS/Source/portable/RVDS/ARM_CM4F;../Drivers/CMSIS/RTOS2/Include;../Drivers/CMSIS/Device/ST/STM32H7xx/Include;../Drivers/CMSIS/Include</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -357,7 +357,7 @@
               <MiscControls></MiscControls>
               <Define></Define>
               <Undefine></Undefine>
-              <IncludePath>../Core/Inc;../MotorControl/Inc;../Application/Gripper/Inc;../Application/StatusIndicator/Inc;../Platform/Inc;../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/Any/Inc;../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/H7xx/Inc;../Drivers/CMSIS/DSP/Include;../Drivers/STM32H7xx_HAL_Driver/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy;../Middlewares/Third_Party/FreeRTOS/Source/include;../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2;../Middlewares/Third_Party/FreeRTOS/Source/portable/RVDS/ARM_CM4F;../Drivers/CMSIS/RTOS2/Include;../Drivers/CMSIS/Device/ST/STM32H7xx/Include;../Drivers/CMSIS/Include</IncludePath>
+              <IncludePath>../Core/Inc;../MotorControl/Inc;../Application/Gripper/Inc;../Application/Communication/Inc;../Application/StatusIndicator/Inc;../Platform/Inc;../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/Any/Inc;../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/H7xx/Inc;../Drivers/CMSIS/DSP/Include;../Drivers/STM32H7xx_HAL_Driver/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy;../Middlewares/Third_Party/FreeRTOS/Source/include;../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2;../Middlewares/Third_Party/FreeRTOS/Source/portable/RVDS/ARM_CM4F;../Drivers/CMSIS/RTOS2/Include;../Drivers/CMSIS/Device/ST/STM32H7xx/Include;../Drivers/CMSIS/Include</IncludePath>
             </VariousControls>
           </Aads>
           <LDads>
@@ -417,6 +417,11 @@
               <FileName>stm32h7xx_hal_timebase_tim.c</FileName>
               <FileType>1</FileType>
               <FilePath>../Core/Src/stm32h7xx_hal_timebase_tim.c</FilePath>
+            </File>
+            <File>
+              <FileName>fdcan.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Core/Src/fdcan.c</FilePath>
             </File>
           </Files>
         </Group>
@@ -512,6 +517,11 @@
               <FileName>stm32h7xx_hal_exti.c</FileName>
               <FileType>1</FileType>
               <FilePath>../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_exti.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32h7xx_hal_fdcan.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_fdcan.c</FilePath>
             </File>
             <File>
               <FileName>stm32h7xx_hal_adc.c</FileName>
@@ -761,6 +771,21 @@
           </Files>
         </Group>
         <Group>
+          <GroupName>Application/Communication</GroupName>
+          <Files>
+            <File>
+              <FileName>communication_service.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Application/Communication/Src/communication_service.c</FilePath>
+            </File>
+            <File>
+              <FileName>gripper_can_protocol.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Application/Communication/Src/gripper_can_protocol.c</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
           <GroupName>Application/StatusIndicator</GroupName>
           <Files>
             <File>
@@ -782,6 +807,11 @@
               <FileName>ws2812_led.c</FileName>
               <FileType>1</FileType>
               <FilePath>../Platform/Src/ws2812_led.c</FilePath>
+            </File>
+            <File>
+              <FileName>can_transport.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Platform/Src/can_transport.c</FilePath>
             </File>
           </Files>
         </Group>

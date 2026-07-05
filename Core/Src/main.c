@@ -24,9 +24,12 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "motorcontrol.h"
+#include "fdcan.h"
 #include "parameters_conversion.h"
 #include "motor_control_service.h"
 #include "gripper_service.h"
+#include "communication_service.h"
+#include "gripper_can_config.h"
 #include "status_indicator.h"
 #include "debug_monitor.h"
 #include "debug_uart_transport.h"
@@ -138,6 +141,9 @@ int main(void)
   MX_DMA_Init();
   MX_ADC1_Init();
   MX_ADC2_Init();
+#if GRIPPER_CAN_ENABLE
+  MX_FDCAN1_Init();
+#endif
   MX_SPI1_Init();
   MX_SPI3_Init();
   MX_TIM1_Init();
@@ -189,6 +195,9 @@ int main(void)
   /* USER CODE BEGIN RTOS_THREADS */
   MotorControlService_CreateTasks();
   GripperService_CreateTask();
+#if GRIPPER_CAN_ENABLE
+  CommunicationService_CreateTask();
+#endif
   StatusIndicator_CreateTask();
   DebugMonitor_CreateTask();
   /* USER CODE END RTOS_THREADS */
@@ -275,8 +284,12 @@ static void PeriphCommonClock_Config(void)
 {
   RCC_PeriphCLKInitTypeDef PeriphClkInitStruct = {0};
 
-  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_ADC | RCC_PERIPHCLK_SPI1 |
+  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_ADC |
+                                             RCC_PERIPHCLK_SPI1 |
                                              RCC_PERIPHCLK_USART1;
+#if GRIPPER_CAN_ENABLE
+  PeriphClkInitStruct.PeriphClockSelection |= RCC_PERIPHCLK_FDCAN;
+#endif
   PeriphClkInitStruct.PLL2.PLL2M = 5;
   PeriphClkInitStruct.PLL2.PLL2N = 96;
   PeriphClkInitStruct.PLL2.PLL2P = 20;
@@ -288,6 +301,9 @@ static void PeriphCommonClock_Config(void)
   PeriphClkInitStruct.AdcClockSelection = RCC_ADCCLKSOURCE_PLL2;
   PeriphClkInitStruct.Spi123ClockSelection = RCC_SPI123CLKSOURCE_PLL2;
   PeriphClkInitStruct.Usart16ClockSelection = RCC_USART16CLKSOURCE_D2PCLK2;
+#if GRIPPER_CAN_ENABLE
+  PeriphClkInitStruct.FdcanClockSelection = RCC_FDCANCLKSOURCE_PLL2;
+#endif
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -621,6 +637,10 @@ static void MX_NVIC_Init(void)
   HAL_NVIC_EnableIRQ(USART1_IRQn);
   HAL_NVIC_SetPriority(USART2_IRQn, 6, 0);
   HAL_NVIC_EnableIRQ(USART2_IRQn);
+#if GRIPPER_CAN_ENABLE
+  HAL_NVIC_SetPriority(FDCAN1_IT0_IRQn, 6, 0);
+  HAL_NVIC_EnableIRQ(FDCAN1_IT0_IRQn);
+#endif
   HAL_NVIC_SetPriority(DMA1_Stream2_IRQn, 7, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream2_IRQn);
   HAL_NVIC_SetPriority(SPI3_IRQn, 7, 0);

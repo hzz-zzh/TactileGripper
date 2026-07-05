@@ -30,7 +30,8 @@ typedef enum
   GRIPPER_FAULT_ENCODER          = (1UL << 1),
   GRIPPER_FAULT_HOME_TIMEOUT     = (1UL << 2),
   GRIPPER_FAULT_HOME_TRAVEL      = (1UL << 3),
-  GRIPPER_FAULT_COMMAND_REJECTED = (1UL << 4)
+  GRIPPER_FAULT_COMMAND_REJECTED = (1UL << 4),
+  GRIPPER_FAULT_COMMUNICATION    = (1UL << 5)
 } GripperFault_t;
 
 typedef struct
@@ -98,6 +99,8 @@ bool GripperController_SetPosition(GripperController_t *controller,
 void GripperController_Stop(GripperController_t *controller);
 bool GripperController_ClearFaults(GripperController_t *controller,
                                    bool motor_fault_cleared);
+void GripperController_LatchExternalFault(GripperController_t *controller,
+                                          uint32_t fault);
 GripperControllerOutput_t GripperController_Update(
   GripperController_t *controller,
   const GripperControllerFeedback_t *feedback);

@@ -44,6 +44,7 @@ bool GripperService_Home(void);
 bool GripperService_SetPosition(int16_t position_permille);
 bool GripperService_Stop(void);
 bool GripperService_ClearFaults(void);
+bool GripperService_LatchExternalFault(uint32_t fault);
 void GripperService_GetStatus(GripperStatus_t *status);
 
 #ifdef __cplusplus
