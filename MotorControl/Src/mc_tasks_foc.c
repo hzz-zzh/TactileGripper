@@ -49,6 +49,8 @@
 static volatile uint16_t hBootCapDelayCounterM1 = ((uint16_t)0);
 static volatile uint16_t hStopPermanencyCounterM1 = ((uint16_t)0);
 static uint16_t alignmentTicksM1 = 0U;
+/* 默认沿用MCSDK配置；诊断任务只会在电机停止时修改该值。 */
+static volatile int16_t alignmentAngleM1 = ALIGNMENT_ANGLE_S16;
 extern SPI_HandleTypeDef hspi1;
 
 #define M1_CHARGE_BOOT_CAP_TICKS          (((uint16_t)SYS_TICK_FREQUENCY * (uint16_t)10) / 1000U)
@@ -70,6 +72,11 @@ MCI_Handle_t *GetMCI(uint8_t bMotor);
 static uint16_t FOC_CurrControllerM1(void);
 
 void TSK_SafetyTask_PWMOFF(uint8_t motor);
+
+void TSK_SetAlignmentAngleM1(int16_t electricalAngle)
+{
+  alignmentAngleM1 = electricalAngle;
+}
 
 /* USER CODE BEGIN Private Functions */
 
@@ -255,7 +262,7 @@ __weak void TSK_MediumFrequencyTaskM1(void)
 
               FOC_Clear( M1 );
               VSS_SetMecAcceleration(&VirtualSpeedSensorM1, 0, 0U);
-              VSS_SetMecAngle(&VirtualSpeedSensorM1, ALIGNMENT_ANGLE_S16);
+              VSS_SetMecAngle(&VirtualSpeedSensorM1, alignmentAngleM1);
               STC_SetControlMode(pSTC[M1], MCM_TORQUE_MODE);
               (void)STC_ExecRamp(pSTC[M1], 0, 0U);
               (void)STC_ExecRamp(pSTC[M1], FINAL_I_ALIGNMENT, M1_ALIGNMENT_DURATION);
@@ -290,7 +297,7 @@ __weak void TSK_MediumFrequencyTaskM1(void)
             }
             else
             {
-              KTH7812_AlignElectricalAngle(&KTH7812_M1, ALIGNMENT_ANGLE_S16);
+              KTH7812_AlignElectricalAngle(&KTH7812_M1, alignmentAngleM1);
               R3_2_SwitchOffPWM( pwmcHandle[M1] );
               STC_Clear(pSTC[M1]);
               STC_SetControlMode(pSTC[M1], MCM_SPEED_MODE);
@@ -595,6 +602,7 @@ inline uint16_t FOC_CurrControllerM1(void)
   speedHandle = STC_GetSpeedSensor(pSTC[M1]);
   hElAngle = SPD_GetElAngle(speedHandle);
   PWMC_GetPhaseCurrents(pwmcHandle[M1], &Iab);
+  /* 保留R3_2驱动内部的电流符号约定，避免在Clarke变换前重复翻转而形成正反馈。 */
   Ialphabeta = MCM_Clarke(Iab);
   Iqd = MCM_Park(Ialphabeta, hElAngle);
   if (PWMC_GetPWMState(pwmcHandle[M1]) == true)

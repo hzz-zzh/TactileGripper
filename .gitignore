@@ -13,6 +13,7 @@
 *.sct
 *.build_log.htm
 *.scvd
+*.log
 
 # 输出目录
 Objects/

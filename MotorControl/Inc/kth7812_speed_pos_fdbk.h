@@ -8,14 +8,17 @@
 extern "C" {
 #endif
 
-#define KTH7812_COUNTS_PER_TURN       4096
+#define KTH7812_COUNTS_PER_TURN       65536L
+#define KTH7812_DIRECTION             (-1) /* 按当前相序将编码器机械角和电角度方向反向。 */
 #define KTH7812_MAX_CONSECUTIVE_ERRORS 3U
+/* 10kHz采样时，7790rpm约为851计数/次；保留约20%的速度裕量。 */
+#define KTH7812_MAX_DELTA_PER_UPDATE  1024L
 
 typedef enum
 {
   KTH7812_OK = 0,
   KTH7812_ERROR_SPI,
-  KTH7812_ERROR_CRC
+  KTH7812_ERROR_PLAUSIBILITY
 } KTH7812_Status_t;
 
 typedef struct
@@ -27,16 +30,12 @@ typedef struct
   int32_t multi_turn_count;
   int32_t speed_sample_count;
   int16_t electrical_offset;
-  int16_t last_raw;
+  uint16_t last_raw;
   uint16_t raw_angle;
   uint16_t last_frame;
-  uint16_t last_good_frame;
   uint32_t frame_count;
-  uint32_t valid_frame_count;
-  uint32_t crc_error_count;
   uint32_t spi_error_count;
-  uint8_t received_crc;
-  uint8_t calculated_crc;
+  uint32_t plausibility_error_count;
   uint8_t consecutive_errors;
   int8_t direction;
   bool initialized;
@@ -54,7 +53,6 @@ void KTH7812_SetElectricalOffset(KTH7812_Handle_t *handle, int16_t offset);
 void KTH7812_AlignElectricalAngle(KTH7812_Handle_t *handle, int16_t electrical_angle);
 int32_t KTH7812_GetMultiTurnCount(const KTH7812_Handle_t *handle);
 bool KTH7812_IsReliable(const KTH7812_Handle_t *handle);
-uint8_t KTH7812_Crc4(uint16_t angle12);
 
 #ifdef __cplusplus
 }

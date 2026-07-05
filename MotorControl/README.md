@@ -15,7 +15,7 @@ The generic MCSDK library sources are referenced from `Reference/H745_MCSDK_OS` 
 | External NTC input | PA3 ADC1_IN15 |
 | KTH7812 | SPI1: PB3 SCK, PB4 MISO, PB5 MOSI, PA15 hardware NSS |
 | Motor Pilot | USART1: PA9 TX, PA10 RX, 1843200 baud |
-| Debug console | USART2: PD5 TX, PD6 RX, 115200 baud |
+| Debug console | USART2: PD5 TX, PD6 RX, 921600 baud; reset/PWM inspection telemetry |
 
 The SPI1 mapping above is the PCB source of truth and intentionally supersedes the older schematic net labels.
 
@@ -24,8 +24,8 @@ The SPI1 mapping above is the PCB source of truth and intentionally supersedes t
 - 16 kHz center-aligned PWM, 500 ns timer dead time; FD6288 adds its internal dead time.
 - 24 V nominal bus, 10 V undervoltage and 30 V overvoltage limits.
 - 1 A software phase-current limit and 2 A bus-current analog-watchdog trip.
-- Automatic alignment and homing use a 0.3 A speed-loop output limit.
-- Any MCSDK, encoder CRC/SPI, homing timeout, travel, voltage, or current fault switches PWM off and latches a fault.
+- The active commissioning build uses 0.1 A alignment and a one-second 0.1 A d-axis hold, then stops PWM.
+- Any MCSDK, encoder SPI, homing timeout, travel, voltage, or current fault switches PWM off and latches a fault.
 
 Do the first power test with a current-limited 24 V supply and the motor mechanically unloaded. Verify all six gate signals and ADC bias before fitting the gripper.
 

@@ -36,6 +36,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define CURRENT_ADC_CALIBRATION_MODE  0
+#define PWM_INSPECTION_MODE           0  /* FOC17正向转矩已产生位移，FOC18用于验证反向转矩对称性。 */
 
 /* USER CODE END PD */
 
@@ -97,6 +99,7 @@ void StartDefaultTask(void *argument);
   */
 int main(void)
 {
+  uint32_t bootResetFlags;
 
   /* USER CODE BEGIN 1 */
 
@@ -104,6 +107,7 @@ int main(void)
 
   /* MPU Configuration--------------------------------------------------------*/
   MPU_Config();
+  bootResetFlags = RCC->RSR;
 
   /* MCU Configuration--------------------------------------------------------*/
 
@@ -132,7 +136,19 @@ int main(void)
   MX_TIM1_Init();
   MX_USART1_UART_Init();
   MX_USART2_UART_Init();
+#if PWM_INSPECTION_MODE
+  DebugMonitor_RunPwmBaselineVectorInspection(bootResetFlags);
+#else
+  DebugMonitor_PrintResetReason(bootResetFlags);
+#endif
+#if !CURRENT_ADC_CALIBRATION_MODE
+  /* 先完成ADC2母线电流零偏读取，再由MCSDK启动双ADC注入转换。 */
+  (void)DebugMonitor_CalibrateBusCurrent();
+#endif
   MX_MotorControl_Init();
+#if CURRENT_ADC_CALIBRATION_MODE
+  DebugMonitor_RunCurrentAdcCalibration();
+#endif
   MX_NVIC_Init();
   /* USER CODE BEGIN 2 */
 
@@ -402,8 +418,8 @@ static void MX_ADC2_Init(void)
   watchdog.WatchdogMode = ADC_ANALOGWATCHDOG_SINGLE_REG;
   watchdog.Channel = ADC_CHANNEL_3;
   watchdog.ITMode = ENABLE;
-  watchdog.HighThreshold = 9185U; /* +2.0 A around the 1.65 V bias */
-  watchdog.LowThreshold = 7199U;  /* -2.0 A around the 1.65 V bias */
+  watchdog.HighThreshold = 9243U; /* Provisional +2 A; recentered at boot. */
+  watchdog.LowThreshold = 7257U;  /* Provisional -2 A; recentered at boot. */
   if (HAL_ADC_AnalogWDGConfig(&hadc2, &watchdog) != HAL_OK)
   {
     Error_Handler();
@@ -450,7 +466,8 @@ static void MX_TIM1_Init(void)
   htim1.Init.Prescaler = TIM_CLOCK_DIVIDER - 1U;
   htim1.Init.CounterMode = TIM_COUNTERMODE_CENTERALIGNED1;
   htim1.Init.Period = PWM_PERIOD_CYCLES / 2U;
-  htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV2;
+  /* TIM1采用DIV1；DTG=137时实际死区约530ns。 */
+  htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim1.Init.RepetitionCounter = REP_COUNTER;
   htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_PWM_Init(&htim1) != HAL_OK)
@@ -529,7 +546,7 @@ static void MX_USART1_UART_Init(void)
 static void MX_USART2_UART_Init(void)
 {
   huart2.Instance = USART2;
-  huart2.Init.BaudRate = 115200;
+  huart2.Init.BaudRate = 921600;
   huart2.Init.WordLength = UART_WORDLENGTH_8B;
   huart2.Init.StopBits = UART_STOPBITS_1;
   huart2.Init.Parity = UART_PARITY_NONE;

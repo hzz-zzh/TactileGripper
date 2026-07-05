@@ -76,6 +76,9 @@ void TSK_SetChargeBootCapDelayM1(uint16_t hTickCount);
 /* */
 bool TSK_ChargeBootCapDelayHasElapsedM1(void);
 
+/* 仅用于低电流联调：在电机启动前设置本次静态对齐电角度。 */
+void TSK_SetAlignmentAngleM1(int16_t electricalAngle);
+
 /* */
 void TSK_SetStopPermanencyTimeM1(uint16_t hTickCount);
 

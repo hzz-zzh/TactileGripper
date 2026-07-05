@@ -49,13 +49,8 @@ typedef struct
   uint16_t temperature_raw;
   uint16_t bus_voltage_v;
   uint16_t encoder_last_frame;
-  uint16_t encoder_last_good_frame;
   uint32_t encoder_frames;
-  uint32_t encoder_valid_frames;
-  uint32_t encoder_crc_errors;
   uint32_t encoder_spi_errors;
-  uint8_t encoder_received_crc;
-  uint8_t encoder_calculated_crc;
   uint8_t encoder_consecutive_errors;
   bool encoder_reliable;
   uint16_t mc_faults;

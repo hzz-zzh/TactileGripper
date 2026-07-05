@@ -27,8 +27,9 @@
 
 /************************* CPU & ADC PERIPHERAL CLOCK CONFIG ******************/
 #define SYSCLK_FREQ                      550000000uL
-#define TIM_CLOCK_DIVIDER                1
-#define ADV_TIM_CLK_MHz                  275
+/* 10kHz下采用二分频，保证MCSDK的16位SVPWM周期常量不溢出。 */
+#define TIM_CLOCK_DIVIDER                2
+#define ADV_TIM_CLK_MHz                  137
 #define ADC_CLK_MHz                      24
 #define HALL_TIM_CLK                     275000000
 

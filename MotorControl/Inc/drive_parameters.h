@@ -45,7 +45,7 @@
 
 /**************************    DRIVE SETTINGS SECTION   **********************/
 /* PWM generation and current reading */
-#define PWM_FREQUENCY                       16000
+#define PWM_FREQUENCY                       10000 /*!< 与已验证可运行工程对齐，降低首次功率级联调风险 */
 #define PWM_FREQ_SCALING                    1
 #define LOW_SIDE_SIGNALS_ENABLING           LS_PWM_TIMER
 
@@ -54,11 +54,11 @@
 #define ISR_FREQUENCY_HZ                    (PWM_FREQUENCY/REGULATION_EXECUTION_RATE) /*!< @brief FOC execution rate in Hz */
 
 /* Gains values for torque and flux control loops */
-#define PID_TORQUE_KP_DEFAULT               2200
+#define PID_TORQUE_KP_DEFAULT               1200//2200
 #define PID_TORQUE_KI_DEFAULT               2200
 #define PID_TORQUE_KD_DEFAULT               100
-#define PID_FLUX_KP_DEFAULT                 2200
-#define PID_FLUX_KI_DEFAULT                 2200
+#define PID_FLUX_KP_DEFAULT                 1200//2200
+#define PID_FLUX_KI_DEFAULT                 2200//2200
 #define PID_FLUX_KD_DEFAULT                 100
 
 /* Torque/Flux control loop gains dividers*/
@@ -93,7 +93,7 @@
 #define IQMAX_A                             1.0
 
 /* Default settings */
-#define DEFAULT_CONTROL_MODE                MCM_SPEED_MODE
+#define DEFAULT_CONTROL_MODE                MCM_TORQUE_MODE /*!< 当前默认进入转矩/电流模式，便于直接进行Iq电流环调试。 */
 #define DEFAULT_TARGET_SPEED_RPM            0
 #define DEFAULT_TARGET_SPEED_UNIT           (DEFAULT_TARGET_SPEED_RPM*SPEED_UNIT/U_RPM)
 #define DEFAULT_TORQUE_COMPONENT_A          0
@@ -117,9 +117,9 @@
 
 /******************************   START-UP PARAMETERS   **********************/
 /* Encoder alignment */
-#define M1_ALIGNMENT_DURATION               700 /*!< milliseconds */
+#define M1_ALIGNMENT_DURATION               500 /*!< 使用500毫秒缓慢建立对齐电流，确保转子稳定到目标电角度。 */
 #define M1_ALIGNMENT_ANGLE_DEG              90 /*!< degrees [0...359] */
-#define FINAL_I_ALIGNMENT_A                 0.3 /*!< Alignment current, A */
+#define FINAL_I_ALIGNMENT_A                 0.30 /*!< 使用300毫安完成启动对齐，然后进入当前选择的电流环或速度环调试。 */
 /* With ALIGNMENT_ANGLE_DEG equal to 90 degrees final alignment */
 /* phase current = (FINAL_I_ALIGNMENT * 1.65/ Av)/(32767 * Rshunt) */
 /* being Av the voltage gain between Rshunt and A/D input */
