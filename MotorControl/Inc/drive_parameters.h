@@ -93,7 +93,7 @@
 #define IQMAX_A                             1.0
 
 /* Default settings */
-#define DEFAULT_CONTROL_MODE                MCM_TORQUE_MODE /*!< 当前默认进入转矩/电流模式，便于直接进行Iq电流环调试。 */
+#define DEFAULT_CONTROL_MODE                MCM_SPEED_MODE /*!< 当前位置模式需要速度环作为内层目标，默认进入速度模式。 */
 #define DEFAULT_TARGET_SPEED_RPM            0
 #define DEFAULT_TARGET_SPEED_UNIT           (DEFAULT_TARGET_SPEED_RPM*SPEED_UNIT/U_RPM)
 #define DEFAULT_TORQUE_COMPONENT_A          0

@@ -61,6 +61,7 @@
 
 /* External variables --------------------------------------------------------*/
 extern TIM_HandleTypeDef htim6;
+extern UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN EV */
 
@@ -248,6 +249,11 @@ void USART1_IRQHandler(void)
     LL_DMA_ClearFlag_TC(DMA_RX_A, DMACH_RX_A);
     ASPEP_HWReset(&aspepOverUartA);
   }
+}
+
+void USART2_IRQHandler(void)
+{
+  HAL_UART_IRQHandler(&huart2);
 }
 
 /* USER CODE BEGIN 1 */

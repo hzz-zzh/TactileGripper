@@ -24,6 +24,13 @@ typedef enum
 
 typedef enum
 {
+  GRIPPER_CONTROL_MODE_CURRENT = 0,
+  GRIPPER_CONTROL_MODE_SPEED,
+  GRIPPER_CONTROL_MODE_POSITION
+} GripperControlMode_t;
+
+typedef enum
+{
   GRIPPER_FAULT_NONE = 0,
   GRIPPER_FAULT_ENCODER = (1UL << 0),
   GRIPPER_FAULT_MOTOR_CONTROL = (1UL << 1),
@@ -37,12 +44,18 @@ typedef struct
   GripperMotorState_t state;
   uint32_t faults;
   int32_t position_count;
+  int32_t position_zero_count;
+  int32_t target_position_count;
+  int32_t target_turn_milli;
+  int32_t position_turn_milli;
   int32_t open_count;
   int32_t close_count;
   int16_t position_permille;
   int16_t target_permille;
+  float speed_ref_rpm;
   float speed_rpm;
   float iq_a;
+  float id_a;
   float bus_current_a;
   uint16_t bus_current_raw;
   uint16_t bus_voltage_raw;
@@ -56,10 +69,12 @@ typedef struct
   uint16_t mc_faults;
   uint16_t mc_occurred_faults;
   bool homed;
+  GripperControlMode_t control_mode;
 } GripperMotorStatus_t;
 
 void GripperMotorService_CreateTasks(void);
 bool GripperMotor_SetPosition(int16_t position_permille);
+bool GripperMotor_SetMotorTurnsMilli(int32_t target_turn_milli);
 bool GripperMotor_SetSpeed(float motor_rpm);
 bool GripperMotor_SetCurrent(float iq_a);
 bool GripperMotor_Rehome(void);

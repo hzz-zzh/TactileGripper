@@ -708,24 +708,21 @@ static int32_t DebugMonitor_ToInteger(float value)
 
 static const char *DebugMonitor_GetLoopModeName(const GripperMotorStatus_t *status)
 {
-  if ((status->homed) &&
-      ((status->state == GRIPPER_MOTOR_POSITIONING) ||
-       (status->state == GRIPPER_MOTOR_MOVE_SAFE)))
+  switch (status->control_mode)
   {
-    return "position";
+    case GRIPPER_CONTROL_MODE_POSITION:
+      return "position";
+    case GRIPPER_CONTROL_MODE_SPEED:
+      return "speed";
+    case GRIPPER_CONTROL_MODE_CURRENT:
+    default:
+      return "current";
   }
-  return (MC_GetControlModeMotor1() == MCM_SPEED_MODE) ? "speed" : "current";
 }
 
 static int32_t DebugMonitor_GetTargetPositionCount(const GripperMotorStatus_t *status)
 {
-  int32_t travel;
-  if (!status->homed)
-  {
-    return 0;
-  }
-  travel = status->close_count - status->open_count;
-  return status->open_count + ((travel * (int32_t)status->target_permille) / 1000L);
+  return status->target_position_count;
 }
 
 void DebugMonitor_RunCurrentAdcCalibration(void)
@@ -812,10 +809,6 @@ static void DebugMonitor_Task(void *argument)
     MCI_State_t motorState = MC_GetSTMStateMotor1();
     qd_f_t reference = MC_GetIqdrefMotor1_F();
     qd_f_t measured = MC_GetIqdMotor1_F();
-    uint16_t busRaw = RCM_GetRegularConv(&BusCurrentRegConv_M1);
-    uint16_t busVoltage = VBS_GetAvBusVoltage_V(&BusVoltageSensor_M1._Super);
-    float busCurrent = ((int32_t)busRaw - (int32_t)busCurrentZeroRaw) *
-                       CURRENT_CONV_FACTOR_INV;
     int32_t targetPosition;
     const char *modeName;
 
@@ -837,8 +830,8 @@ static void DebugMonitor_Task(void *argument)
       (void)snprintf(line, sizeof(line),
                      "CUR:st=%u,valid=0,ibus=%ld,vbus=%u,ang=%u,pe=%lu,f=0x%04X\r\n",
                      (unsigned int)motorState,
-                     (long)DebugMonitor_ToMilli(busCurrent),
-                     (unsigned int)busVoltage,
+                     (long)0,
+                     (unsigned int)0,
                      (unsigned int)KTH7812_M1.raw_angle,
                      (unsigned long)KTH7812_M1.plausibility_error_count,
                      (unsigned int)MC_GetCurrentFaultsMotor1());
@@ -850,10 +843,10 @@ static void DebugMonitor_Task(void *argument)
                    (long)DebugMonitor_ToMilli(reference.d),
                    (long)DebugMonitor_ToMilli(measured.q),
                    (long)DebugMonitor_ToMilli(measured.d),
-                   (long)DebugMonitor_ToInteger(MC_GetMecSpeedReferenceMotor1_F()),
+                   (long)DebugMonitor_ToInteger(gripperStatus.speed_ref_rpm),
                    (long)DebugMonitor_ToInteger(gripperStatus.speed_rpm),
                    (long)targetPosition,
-                   (long)gripperStatus.position_count);
+                   (long)(gripperStatus.position_count - gripperStatus.position_zero_count));
     DebugMonitor_Write(line);
 
 //    if ((motorState == ALIGNMENT) || (motorState == RUN))

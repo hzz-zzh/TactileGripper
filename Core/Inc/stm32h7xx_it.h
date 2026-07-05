@@ -57,6 +57,7 @@ void ADC_IRQHandler(void);
 void TIM1_UP_IRQHandler(void);
 void TIM1_BRK_IRQHandler(void);
 void USART1_IRQHandler(void);
+void USART2_IRQHandler(void);
 /* USER CODE BEGIN EFP */
 
 /* USER CODE END EFP */

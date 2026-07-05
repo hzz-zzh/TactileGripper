@@ -578,6 +578,8 @@ static void MX_NVIC_Init(void)
   HAL_NVIC_EnableIRQ(ADC_IRQn);
   HAL_NVIC_SetPriority(USART1_IRQn, 6, 0);
   HAL_NVIC_EnableIRQ(USART1_IRQn);
+  HAL_NVIC_SetPriority(USART2_IRQn, 6, 0);
+  HAL_NVIC_EnableIRQ(USART2_IRQn);
 }
 
 /**
