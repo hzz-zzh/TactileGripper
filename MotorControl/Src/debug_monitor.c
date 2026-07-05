@@ -2,12 +2,14 @@
 
 #include "cmsis_os2.h"
 #include "main.h"
-#include "gripper_motor_service.h"
+#include "gripper_config.h"
+#include "gripper_service.h"
 #include "kth7812_speed_pos_fdbk.h"
 #include "mc_api.h"
 #include "mc_config.h"
 #include "mc_config_common.h"
 #include "parameters_conversion.h"
+#include "debug_uart_transport.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -15,10 +17,13 @@
 
 #define DEBUG_POLL_TICKS       20U  /* 10 ms at the 2 kHz RTOS tick: 100 Hz. */
 #define DEBUG_IDLE_POLL_TICKS  100U /* 非运行状态降为20 Hz，仍可捕获短时状态变化。 */
+#define DEBUG_HOMING_PRINT_MS  100U
+#define DEBUG_HOMING_FAST_STALL_MS 200U
+#define DEBUG_HOMING_FAST_PRINT_MS 20U
 #define DEBUG_TX_TIMEOUT_MS    2U
 #define ADC_CAL_SAMPLES        2048U
 
-extern UART_HandleTypeDef huart2;
+extern UART_HandleTypeDef huart1;
 extern ADC_HandleTypeDef hadc1;
 extern ADC_HandleTypeDef hadc2;
 extern TIM_HandleTypeDef htim1;
@@ -36,12 +41,7 @@ typedef struct
 
 static void DebugMonitor_Write(const char *text)
 {
-  size_t length = strlen(text);
-  if (length > 0U)
-  {
-    (void)HAL_UART_Transmit(&huart2, (const uint8_t *)text, (uint16_t)length,
-                            DEBUG_TX_TIMEOUT_MS);
-  }
+  (void)DebugUartTransport_Write(text, DEBUG_TX_TIMEOUT_MS);
 }
 
 static bool DebugMonitor_ReadAdc(ADC_HandleTypeDef *hadc, uint32_t channel,
@@ -259,7 +259,7 @@ void DebugMonitor_RunPwmInspection(uint32_t reset_flags)
   /* 每次上电只接受一次大写P，避免串口噪声导致重复驱动。 */
   for (;;)
   {
-    if ((HAL_UART_Receive(&huart2, &command, 1U, 100U) == HAL_OK) &&
+    if ((HAL_UART_Receive(&huart1, &command, 1U, 100U) == HAL_OK) &&
         (command == (uint8_t)'P'))
     {
       break;
@@ -519,7 +519,7 @@ void DebugMonitor_RunPwmVectorInspection(uint32_t reset_flags)
     DebugMonitor_Write(line);
     for (;;)
     {
-      if ((HAL_UART_Receive(&huart2, &command, 1U, 100U) == HAL_OK) &&
+      if ((HAL_UART_Receive(&huart1, &command, 1U, 100U) == HAL_OK) &&
           (command == (uint8_t)'P')) { break; }
     }
 
@@ -624,7 +624,7 @@ void DebugMonitor_RunPwmBaselineVectorInspection(uint32_t reset_flags)
     DebugMonitor_Write(line);
     for (;;)
     {
-      if ((HAL_UART_Receive(&huart2, &command, 1U, 100U) == HAL_OK) &&
+      if ((HAL_UART_Receive(&huart1, &command, 1U, 100U) == HAL_OK) &&
           (command == (uint8_t)'P')) { break; }
     }
 
@@ -706,23 +706,98 @@ static int32_t DebugMonitor_ToInteger(float value)
                            (int32_t)(value - 0.5f);
 }
 
-static const char *DebugMonitor_GetLoopModeName(const GripperMotorStatus_t *status)
+static const char *DebugMonitor_GripperStateName(GripperState_t state)
 {
-  switch (status->control_mode)
+  switch (state)
   {
-    case GRIPPER_CONTROL_MODE_POSITION:
-      return "position";
-    case GRIPPER_CONTROL_MODE_SPEED:
-      return "speed";
-    case GRIPPER_CONTROL_MODE_CURRENT:
+    case GRIPPER_STATE_BOOT:
+      return "BOOT";
+
+    case GRIPPER_STATE_PRECHECK:
+      return "PRECHECK";
+
+    case GRIPPER_STATE_STARTING:
+      return "STARTING";
+
+    case GRIPPER_STATE_HOMING_OPEN:
+      return "HOMING_OPEN";
+
+    case GRIPPER_STATE_HOMING_CLOSE:
+      return "HOMING_CLOSE";
+
+    case GRIPPER_STATE_MOVING_SAFE:
+      return "MOVING_SAFE";
+
+    case GRIPPER_STATE_READY:
+      return "READY";
+
+    case GRIPPER_STATE_MOVING:
+      return "MOVING";
+
+    case GRIPPER_STATE_HOLDING:
+      return "HOLDING";
+
+    case GRIPPER_STATE_STOPPED:
+      return "STOPPED";
+
+    case GRIPPER_STATE_FAULT:
+      return "FAULT";
+
     default:
-      return "current";
+      return "UNKNOWN";
   }
 }
 
-static int32_t DebugMonitor_GetTargetPositionCount(const GripperMotorStatus_t *status)
+static bool DebugMonitor_IsHomingPrintActive(
+  const GripperStatus_t *status)
 {
-  return status->target_position_count;
+  switch (status->state)
+  {
+    case GRIPPER_STATE_PRECHECK:
+    case GRIPPER_STATE_STARTING:
+    case GRIPPER_STATE_HOMING_OPEN:
+    case GRIPPER_STATE_HOMING_CLOSE:
+    case GRIPPER_STATE_MOVING_SAFE:
+      return true;
+
+    case GRIPPER_STATE_FAULT:
+      return !status->homed;
+
+    default:
+      return false;
+  }
+}
+
+static bool DebugMonitor_ShouldPrintHoming(
+  const GripperStatus_t *status,
+  GripperState_t *lastState,
+  uint32_t *lastPrintTick)
+{
+  uint32_t now = osKernelGetTickCount();
+  uint32_t tickHz = osKernelGetTickFreq();
+  uint32_t elapsedMs = 0U;
+  uint32_t intervalMs = DEBUG_HOMING_PRINT_MS;
+
+  if (tickHz != 0U)
+  {
+    elapsedMs = (uint32_t)(((uint64_t)(now - *lastPrintTick) * 1000ULL) /
+                           tickHz);
+  }
+
+  if (status->stall_elapsed_ms >= DEBUG_HOMING_FAST_STALL_MS)
+  {
+    intervalMs = DEBUG_HOMING_FAST_PRINT_MS;
+  }
+
+  if ((status->state != *lastState) ||
+      (elapsedMs >= intervalMs))
+  {
+    *lastState = status->state;
+    *lastPrintTick = now;
+    return true;
+  }
+
+  return false;
 }
 
 void DebugMonitor_RunCurrentAdcCalibration(void)
@@ -800,21 +875,24 @@ void DebugMonitor_RunCurrentAdcCalibration(void)
 static void DebugMonitor_Task(void *argument)
 {
   uint32_t next = osKernelGetTickCount();
-  char line[256];
+  uint32_t lastHomingPrintTick = 0U;
+  GripperState_t lastHomingPrintState = GRIPPER_STATE_BOOT;
+  uint32_t speedCheckLastTick = 0U;
+  int32_t speedCheckLastCount = 0;
+  bool speedCheckValid = false;
+  char line[384];
   (void)argument;
 
   for (;;)
   {
-    GripperMotorStatus_t gripperStatus;
+    GripperStatus_t gripperStatus;
     MCI_State_t motorState = MC_GetSTMStateMotor1();
     qd_f_t reference = MC_GetIqdrefMotor1_F();
     qd_f_t measured = MC_GetIqdMotor1_F();
-    int32_t targetPosition;
-    const char *modeName;
+    bool homingPrintActive;
 
-    GripperMotor_GetStatus(&gripperStatus);
-    targetPosition = DebugMonitor_GetTargetPositionCount(&gripperStatus);
-    modeName = DebugMonitor_GetLoopModeName(&gripperStatus);
+    GripperService_GetStatus(&gripperStatus);
+    homingPrintActive = DebugMonitor_IsHomingPrintActive(&gripperStatus);
 
     if ((motorState != ALIGNMENT) && (motorState != RUN))
     {
@@ -824,30 +902,86 @@ static void DebugMonitor_Task(void *argument)
       measured.q = 0.0f;
       measured.d = 0.0f;
     }
+
+    if (homingPrintActive)
+    {
+      if (DebugMonitor_ShouldPrintHoming(&gripperStatus,
+                                         &lastHomingPrintState,
+                                         &lastHomingPrintTick))
+      {
+        uint32_t speedCheckTick = osKernelGetTickCount();
+        uint32_t speedCheckDeltaTick = speedCheckTick - speedCheckLastTick;
+        int32_t speedCheckRpm = 0;
+        int32_t homeTravel =
+          gripperStatus.position_count - gripperStatus.open_count;
+        int32_t homeTravelMilliTurns =
+          (int32_t)(((int64_t)homeTravel * 1000LL) /
+                    GRIPPER_MOTOR_COUNTS_PER_TURN);
+
+        /* 使用日志间隔内的count差独立计算转速，用于核对MCSDK速度换算。 */
+        if (speedCheckValid && (speedCheckDeltaTick > 0U))
+        {
+          speedCheckRpm = (int32_t)
+            (((int64_t)(gripperStatus.position_count - speedCheckLastCount) *
+              (int64_t)osKernelGetTickFreq() * 60LL) /
+             ((int64_t)GRIPPER_MOTOR_COUNTS_PER_TURN *
+              (int64_t)speedCheckDeltaTick));
+        }
+        speedCheckLastTick = speedCheckTick;
+        speedCheckLastCount = gripperStatus.position_count;
+        speedCheckValid = true;
+
+        /* 回零阶段保留字段名，方便直接判断卡在预检查、启动、开端或闭端搜索。 */
+//        (void)snprintf(line, sizeof(line),
+//                       "homing: state=%s,ms=%lu,stall=%lu,pos=%ld,"
+//                       "open=%ld,close=%ld,travel=%ld,travel_mt=%ld,"
+//                       "speedr=%ld,speed=%ld,iqr=%ld,iq=%ld,enc=%u,"
+//                       "fault=0x%08lX,motor=0x%08lX,mc=0x%04X\r\n",
+//                       DebugMonitor_GripperStateName(gripperStatus.state),
+//                       (unsigned long)gripperStatus.state_elapsed_ms,
+//                       (unsigned long)gripperStatus.stall_elapsed_ms,
+//                       (long)gripperStatus.position_count,
+//                       (long)gripperStatus.open_count,
+//                       (long)gripperStatus.close_count,
+//                       (long)homeTravel,
+//                       (long)homeTravelMilliTurns,
+//                       (long)DebugMonitor_ToInteger(gripperStatus.speed_ref_rpm),
+//                       (long)DebugMonitor_ToInteger(gripperStatus.speed_rpm),
+//                       (long)DebugMonitor_ToMilli(gripperStatus.iq_ref_a),
+//                       (long)DebugMonitor_ToMilli(gripperStatus.iq_a),
+//                       gripperStatus.encoder_reliable ? 1U : 0U,
+//                       (unsigned long)gripperStatus.faults,
+//                       (unsigned long)gripperStatus.motor_faults,
+//                       (unsigned int)gripperStatus.mc_faults);
+        (void)snprintf(line, sizeof(line),
+                       "homing: %d,%lu,"
+                       "%ld,%ld,%ld,%ld,%ld,%u\r\n",
+						gripperStatus.state,
+                       (unsigned long)gripperStatus.stall_elapsed_ms,
+                       (long)DebugMonitor_ToInteger(gripperStatus.speed_ref_rpm),
+                       (long)DebugMonitor_ToInteger(gripperStatus.speed_rpm),
+                       (long)speedCheckRpm,
+                       (long)DebugMonitor_ToMilli(gripperStatus.iq_ref_a),
+                       (long)DebugMonitor_ToMilli(gripperStatus.iq_a),
+                       gripperStatus.encoder_reliable ? 1U : 0U);
+        DebugMonitor_Write(line);
+      }
+    }
     else
     {
-      /* 偏置校准完成前MCSDK的Iqd/Iab缓存无效，禁止把饱和值当成真实电流。 */
       (void)snprintf(line, sizeof(line),
-                     "CUR:st=%u,valid=0,ibus=%ld,vbus=%u,ang=%u,pe=%lu,f=0x%04X\r\n",
-                     (unsigned int)motorState,
-                     (long)0,
-                     (unsigned int)0,
-                     (unsigned int)KTH7812_M1.raw_angle,
-                     (unsigned long)KTH7812_M1.plausibility_error_count,
-                     (unsigned int)MC_GetCurrentFaultsMotor1());
+                     "%s: %ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld\r\n",
+                     "position",
+                     (long)DebugMonitor_ToMilli(reference.q),
+                     (long)DebugMonitor_ToMilli(reference.d),
+                     (long)DebugMonitor_ToMilli(measured.q),
+                     (long)DebugMonitor_ToMilli(measured.d),
+                     (long)DebugMonitor_ToInteger(gripperStatus.speed_ref_rpm),
+                     (long)DebugMonitor_ToInteger(gripperStatus.speed_rpm),
+                     (long)gripperStatus.target_count,
+                     (long)gripperStatus.position_count);
+      DebugMonitor_Write(line);
     }
-    (void)snprintf(line, sizeof(line),
-                   "%s: %ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld\r\n",
-                   modeName,
-                   (long)DebugMonitor_ToMilli(reference.q),
-                   (long)DebugMonitor_ToMilli(reference.d),
-                   (long)DebugMonitor_ToMilli(measured.q),
-                   (long)DebugMonitor_ToMilli(measured.d),
-                   (long)DebugMonitor_ToInteger(gripperStatus.speed_ref_rpm),
-                   (long)DebugMonitor_ToInteger(gripperStatus.speed_rpm),
-                   (long)targetPosition,
-                   (long)(gripperStatus.position_count - gripperStatus.position_zero_count));
-    DebugMonitor_Write(line);
 
 //    if ((motorState == ALIGNMENT) || (motorState == RUN))
 //    {
@@ -866,7 +1000,8 @@ static void DebugMonitor_Task(void *argument)
 //      DebugMonitor_Write(rawLine);
 //    }
 
-    next += ((motorState == ALIGNMENT) || (motorState == RUN)) ?
+    next += (homingPrintActive ||
+             (motorState == ALIGNMENT) || (motorState == RUN)) ?
             DEBUG_POLL_TICKS : DEBUG_IDLE_POLL_TICKS;
     (void)osDelayUntil(next);
   }

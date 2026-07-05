@@ -1,266 +1,281 @@
-# STM32H723 触觉夹爪电机控制工程
+# STM32H723 触觉夹爪控制工程
 
-## 1. 工程简介
+## 1. 当前能力
 
-本工程基于 STM32H723VGH6、FreeRTOS 和 ST MCSDK 6.4.1，实现三相无刷电机的有感 FOC 控制、KTH7812 绝对磁编码器反馈、自动双端回零以及夹爪位置控制。
+工程基于 STM32H723VGH6、FreeRTOS 和 ST MCSDK 6.4.1，当前已接入：
 
-当前版本专注于电机控制。触觉数据采集、自适应抓取、CAN FD 和 RS485 尚未接入。
+- 三相无刷电机有感 FOC；
+- TIM1 互补 PWM 与 ADC1/ADC2 三电阻采样；
+- KTH7812 绝对编码器角度、速度和多圈位置；
+- 电流环、速度环和夹爪位置环；
+- 夹爪开端/闭端自动回零与 0～1000 行程映射；
+- UART1 夹爪调试命令与运行数据输出；
+- UART2 端子保留，当前不作为调试控制台；
+- WS2812E-1313 单灯运行状态指示；
+- 编码器、MCSDK、母线电压、软件过流和回零异常保护。
 
-主要能力：
+触觉数据、自适应力控、CAN FD 和 RS485 尚未接入，但应用层接口已经与
+MCSDK 解耦，后续通讯模块只需要提交夹爪命令，不应直接调用电机底层接口。
 
-- TIM1 产生 16 kHz 中心对齐六路互补 PWM；
-- ADC1/ADC2 同步三电阻电流采样；
-- KTH7812 提供角度、转速和多圈位置反馈；
-- 支持电流环、速度环和夹爪位置环；
-- 上电自动电角度对齐和双机械限位回零；
-- 支持 Motor Pilot/ASPEP；
-- 编码器、母线电压、过流、堵转和回零异常均会锁存故障并关闭 PWM。
+## 2. 软件分层
 
-## 2. 目录说明
+```text
+Core/
+  STM32CubeMX 生成的时钟、GPIO、ADC、TIM、SPI、UART、DMA 和启动代码
 
-| 路径 | 说明 |
+MotorControl/
+  Inc/motor_control_service.h       电机执行器公共接口
+  Src/motor_control_service.c       MCSDK 调度、启停、反馈和底层保护
+  Inc/kth7812_speed_pos_fdbk.h      KTH7812 编码器接口
+  Src/kth7812_speed_pos_fdbk.c      编码器采集与速度/多圈计算
+  Inc|Src/...                       MCSDK 配置及驱动
+
+Application/Gripper/
+  Inc/gripper_config.h              夹爪机械与控制参数
+  Inc/gripper_controller.h          纯夹爪状态机接口
+  Src/gripper_controller.c          回零、位置映射和位置外环
+  Inc/gripper_service.h             面向 UART/CAN/RS485/触觉层的统一 API
+  Src/gripper_service.c             FreeRTOS 任务、命令队列和电机适配
+
+Application/StatusIndicator/
+  Inc/status_indicator.h            状态指示任务接口
+  Src/status_indicator.c            夹爪状态到颜色/动画的映射策略
+
+Platform/
+  Inc|Src/debug_uart_transport.*    调试串口发送互斥与统一出口
+  Inc|Src/ws2812_led.*              SPI3+DMA的WS2812底层驱动
+
+MDK-ARM/
+  Keil 工程文件
+```
+
+依赖方向固定为：
+
+```text
+UART / CAN / RS485 / 触觉策略
+             ↓
+       GripperService
+             ↓
+     GripperController
+             ↓
+   MotorControlService
+             ↓
+     MCSDK + KTH7812
+```
+
+`gripper_controller.c` 不依赖 HAL、FreeRTOS 或 MCSDK，便于后续在 PC 上做状态机
+单元测试。`motor_control_service.c` 不包含夹爪开闭、回零和触觉概念，只提供电机
+执行能力。
+
+## 3. 控制链路
+
+正常夹爪位置控制为三级串联：
+
+```text
+夹爪目标 0~1000
+      ↓
+位置环 200 Hz：位置误差 → 电机速度目标 rpm
+      ↓
+速度环 1 kHz：速度误差 → Iq 目标 A
+      ↓
+电流环 16 kHz：Iq/Id 误差 → SVPWM
+```
+
+- 位置环在 `Application/Gripper/Src/gripper_controller.c`；
+- 速度环和电流环由 MCSDK 执行；
+- KTH7812 位于电机轴，位置计数不会自动除以 10:1 减速比；
+- 夹爪位置 `0` 表示全开，`1000` 表示全闭；
+- 保持状态仍运行位置外环，受到外力偏移后会回到目标位置。
+
+## 4. 自动回零流程
+
+默认 `GRIPPER_AUTO_HOME_ON_BOOT=1`，上电后自动执行：
+
+1. 等待编码器、母线电压和电机服务完成预检查；
+2. 启动 MCSDK，由其完成电角度对齐；
+3. 以受限速度和 0.3 A 限流寻找开端；
+4. 检测“低速 + 持续转矩 300 ms”后记录开端；
+5. 反向寻找闭端并记录总行程；
+6. 检查最小行程和最大 20 电机圈限制；
+7. 回到开端 5% 的安全位置；
+8. 进入 `READY`，接受 0～1000 位置命令。
+
+回零期间不要用手持续阻挡夹爪。堵转判定依赖实际机构负载，首次装机应准备急停，
+并从较低电源限流开始验证开闭方向。
+
+## 5. 关键参数
+
+夹爪参数统一位于 `Application/Gripper/Inc/gripper_config.h`：
+
+| 参数 | 默认值 | 说明 |
+| --- | ---: | --- |
+| `GRIPPER_OPEN_DIRECTION` | -1 | 负转速寻找开端，机构方向相反时改为 1 |
+| `GRIPPER_HOME_SPEED_RPM` | 1000 rpm | 回零电机转速 |
+| `GRIPPER_HOME_CURRENT_LIMIT_A` | 2.00 A | 回零速度环 Iq 限幅，需低于电源和驱动安全限流 |
+| `GRIPPER_HOME_STALL_CURRENT_A` | 0.90 A | 堵转电流门限，使用 Iq/Iq_ref 判断 |
+| `GRIPPER_HOME_STALL_SPEED_RPM` | 30 rpm | 堵转速度门限 |
+| `GRIPPER_HOME_STALL_IGNORE_MS` | 1200 ms | 每次开始寻找端点后的起步忽略时间，用于避开静摩擦、蜗杆齿隙和结构弹性形变 |
+| `GRIPPER_HOME_STALL_TIME_MS` | 500 ms | 起步忽略结束后，满足低速和高 Iq 电流所需的连续确认时间 |
+| `GRIPPER_HOME_TIMEOUT_MS` | 10000 ms | 单端搜索超时 |
+| `GRIPPER_HOME_MIN_TRAVEL_COUNTS` | 8192 count | 开端到闭端的最小有效行程，低于该值判定回零行程异常 |
+| `GRIPPER_POSITION_KP_RPM_PER_TURN` | 350 | 位置 P 环增益 |
+| `GRIPPER_POSITION_MAX_SPEED_RPM` | 600 rpm | 夹爪位置模式最大电机速度 |
+| `GRIPPER_POSITION_DEADBAND_COUNTS` | 64 | 到位死区 |
+| `GRIPPER_OPERATION_CURRENT_LIMIT_A` | 0.60 A | 正常位置控制 Iq 限幅 |
+
+调参顺序必须保持为电流环 → 速度环 → 位置环 → 回零判定 → 触觉力控。外环尚未稳定时
+不应通过提高内层限流来掩盖振荡。
+
+## 6. 应用 API
+
+公共接口位于 `Application/Gripper/Inc/gripper_service.h`：
+
+```c
+bool GripperService_Home(void);
+bool GripperService_SetPosition(int16_t position_permille);
+bool GripperService_Stop(void);
+bool GripperService_ClearFaults(void);
+void GripperService_GetStatus(GripperStatus_t *status);
+```
+
+CAN、RS485 和触觉策略层应调用上述接口。命令通过 FreeRTOS 消息队列进入夹爪任务，
+避免通讯中断或其他任务直接修改控制状态。
+
+示例：
+
+```c
+GripperStatus_t status;
+
+GripperService_GetStatus(&status);
+if (status.homed && (status.faults == GRIPPER_FAULT_NONE))
+{
+  (void)GripperService_SetPosition(500); /* 移动到行程中点 */
+}
+```
+
+## 7. UART1 调试命令
+
+UART1 使用 PA9/PA10，参数为 921600-8-N-1。当前 USART1 让给人类可读调试控制台，
+Motor Pilot/ASPEP 暂时停用；需要恢复 Motor Pilot 时，应先把调试控制台迁回其他串口。
+
+| 命令 | 作用 |
 | --- | --- |
-| `Core` | H723 时钟、GPIO、ADC、TIM、SPI、UART、DMA、中断和 FreeRTOS 启动代码 |
-| `MotorControl` | MCSDK 配置、KTH7812 驱动、夹爪服务和应用 API |
-| `MDK-ARM` | Keil ARMCC 5 工程和编译产物 |
-| `../Reference` | H745 MCSDK 参考工程及通用 MCSDK 库源码 |
-| `../Tests` | 编码器16位跨零、多圈位置和回零判定单元测试 |
+| `H` 或 `P` | 重新执行夹爪回零 |
+| `G0` | 移动到全开位置 |
+| `G500` | 移动到行程中点 |
+| `G1000` | 移动到全闭位置 |
+| `S` | 停止 PWM，夹爪进入 STOPPED |
+| `C` | 清除电机与夹爪锁存故障 |
+| `Q` | 输出一次夹爪状态快照 |
 
-## 3. 硬件资源
+原纯电机命令 `T...` 和 `Z` 在夹爪模式中被禁用，避免绕过回零后的行程限制。
+
+`Q` 输出：
+
+```text
+gripper: state,fault,homed,target_permille,pos_permille,target_count,pos_count,open_count,close_count
+```
+
+回零过程中周期日志使用带字段名的诊断格式：
+
+```text
+homing: state=HOMING_OPEN,ms=1250,stall=80,pos=12345,open=0,close=0,travel=12345,travel_mt=188,speedr=-800,speed=-4,iqr=260,iq=255,enc=1,fault=0x00000000,motor=0x00000000,mc=0x0000
+```
+
+回零完成后恢复纯数值位置控制日志：
+
+```text
+position: iqr,idr,iq,id,speedr,speed,posr,pos
+```
+
+电流单位 mA，速度单位 rpm，位置单位为电机编码器多圈 count。`travel_mt`为电机
+毫圈，1000表示1电机圈。`homing:`里的`ms`是当前状态持续时间，`stall`是堵转
+判定已累计时间。当前堵转只根据低速和 Iq 电流高两个条件累计，不使用位置窗口参与判断。
+`homing:`默认约100 ms输出一次，`stall`累计超过200 ms后临时加密到约20 ms输出一次，
+状态切换和故障会立即输出。
+
+## 8. WS2812状态指示灯
+
+状态灯为5V供电的WS2812E-1313，数据连接PC12/SPI3_MOSI。SPI3使用48MHz内核时钟
+16分频得到3MHz，每个WS2812数据位编码为4个SPI位：`0=1000`、`1=1100`。
+DMA1 Stream2发送12字节GRB数据，不屏蔽电机FOC中断。
+
+WS2812发送缓存固定放在AXI SRAM起始地址`0x24000000`，工程中IRAM2从`0x24000100`
+开始，前256字节保留给DMA外设缓存。后续调整Keil内存分布、scatter文件或D-Cache
+策略时，需要同步检查这段缓存。
+
+| 夹爪状态 | 指示效果 |
+| --- | --- |
+| PRECHECK / STARTING / HOMING_OPEN / HOMING_CLOSE / MOVING_SAFE | 紫色常亮 |
+| 其他无故障状态 | 绿色常亮 |
+| 任意故障 | 红色常亮 |
+
+为减少眩光和5V电源扰动，各颜色通道限制在约10%亮度。指示灯属于非安全功能，驱动
+失败不会阻止电机保护和夹爪控制。
+
+硬件注意：手册规定VDD=5V时DIN高电平最小为0.7VDD，即3.5V；当前PCB由PC12直接
+输出3.3V，低于手册保证值。硬件已经定型，因此软件按现板直连实现，但首板需要验证
+不同供电电压和温度下是否出现不亮、颜色错误或偶发闪烁。
+
+## 9. 硬件资源
 
 | 功能 | STM32H723 资源 |
 | --- | --- |
 | U/V/W 上桥 PWM | PE9 / PE11 / PE13，TIM1 CH1/CH2/CH3 |
 | U/V/W 下桥 PWM | PE8 / PE10 / PE12，TIM1 CH1N/CH2N/CH3N |
-| A/B/C 相电流 | PA1 ADC1_IN17 / PA2 ADC1、ADC2_IN14 / PA5 ADC2_IN19 |
+| A/B/C 相电流 | PA1 / PA2 / PA5 |
 | 母线电流 | PA6 ADC2_IN3 |
 | 母线电压 | PA7 ADC2_IN7 |
 | 外接 NTC | PA3 ADC1_IN15 |
-| KTH7812 | SPI1：PB3 SCK、PB4 MISO、PB5 MOSI、PA15 硬件 NSS（SPI1 自动片选） |
-| Motor Pilot | USART1：PA9 TX、PA10 RX，1843200 baud，DMA1 Stream0/1 |
-| 调试串口 | USART2：PD5 TX、PD6 RX，921600-8-N-1 |
+| KTH7812 | SPI1：PB3 SCK、PB4 MISO、PB5 MOSI、PA15 硬件 NSS |
+| 调试串口 | USART1：PA9 TX、PA10 RX，921600 baud |
+| 备用串口 | USART2：PD5 TX、PD6 RX，921600 baud |
+| 状态指示灯 | WS2812E-1313：PC12 SPI3_MOSI，DMA1 Stream2 |
 
-SPI1 引脚以实际 PCB 为准，优先级高于旧版原理图中的编码器网络标注。
+主要硬件参数：24 V 母线、5 mΩ 分流、20 倍电流放大、1/21 母线分压、14 极对、
+电机轴侧 KTH7812、10:1 减速器。
 
-## 4. 时钟和控制参数
+## 10. 故障处理
 
-- 外部晶振：25 MHz；
-- CPU：550 MHz；
-- TIM1：275 MHz；
-- ADC：24 MHz；
-- SPI1：48 MHz 外设时钟、8 分频，实际 SCK 为 6 MHz，Mode 3，16 bit；
-- PWM：16 kHz 中心对齐，MCU 死区约 500 ns；
-- FreeRTOS tick：2000 Hz；
-- HAL 时基：TIM6；
-- 速度环：1 kHz；
-- 安全检查：2 kHz；
-- 夹爪位置环：200 Hz。
+底层电机故障位于 `MotorControlFault_t`，夹爪业务故障位于 `GripperFault_t`。任一锁存
+故障都会请求关闭 PWM。主要保护包括：
 
-电机与功率级参数：
+- 编码器不可靠；
+- MCSDK 故障；
+- 母线低于 10 V 或高于 30 V；
+- dq 软件电流超过 1.5 A；
+- 电机启动超时；
+- 回零超时、行程过短或超过 20 电机圈。
 
-- 14 极对；
-- 相电阻 0.555 Ω；
-- 相电感约 0.142 mH；
-- 最大转子速度 7790 rpm；
-- 电机输出连接10:1减速器，KTH7812位于电机轴侧；电机角度和转速换算到减速器输出端时需除以10；
-- 分流电阻 5 mΩ，电流放大倍数 20；
-- 母线分压比 1/21；
-- 标称母线 24 V；
-- 软件运行限流 1 A；
-- ADC2 模拟看门狗硬限制约 ±2 A；
-- 欠压 10 V，过压 30 V。
+清故障后不会直接恢复动作，需要重新发送 `H` 完成回零。外接 NTC 尚未标定，当前
+没有启用温度换算与过温停机，获得 NTC 参数后应在电机服务保护层补充。
 
-## 5. KTH7812 编码器
+## 11. 工程使用说明
 
-编码器驱动位于：
-
-- `MotorControl/Inc/kth7812_speed_pos_fdbk.h`
-- `MotorControl/Src/kth7812_speed_pos_fdbk.c`
-
-驱动按 KTH7812-N 型号处理完整16位角度数据（0～65535，无CRC），并实现：
-
-- SPI1 Mode 3 读取；
-- SPI超时和连续通信错误计数；
-- 角度跨零处理；
-- 正反向多圈累计；
-- 机械速度估算；
-- 机械角到电角度转换；
-- 电角度对齐偏置；
-- SPI 超时或连续通信错误时关闭 PWM。
-
-## 6. 上电与自动回零
-
-FreeRTOS 启动后，夹爪服务依次执行：
-
-1. 检查编码器、母线电压和 MCSDK 状态；
-2. 使用 0.3 A d 轴电流完成转子电角度对齐；
-3. 以低速寻找开端机械限位并记录 `open_count`；
-4. 寻找闭端机械限位并记录 `close_count`；
-5. 退回到总行程的 5%；
-6. 进入 `GRIPPER_MOTOR_READY` 状态。
-
-堵转判定条件为低速并持续产生转矩 300 ms。单端回零超时为 10 s，允许的最大搜索行程为 20 电机圈。
-
-归一化位置定义：
-
-- `0`：全开；
-- `1000`：全闭；
-- 回零完成前拒绝位置命令。
-
-## 7. 应用层 API
-
-接口声明位于 `MotorControl/Inc/gripper_motor_service.h`。
-
-```c
-bool GripperMotor_SetPosition(int16_t position_permille);
-bool GripperMotor_SetSpeed(float motor_rpm);
-bool GripperMotor_SetCurrent(float iq_a);
-bool GripperMotor_Rehome(void);
-void GripperMotor_Stop(void);
-bool GripperMotor_ClearFaults(void);
-void GripperMotor_GetStatus(GripperMotorStatus_t *status);
-```
-
-位置控制示例：
-
-```c
-GripperMotorStatus_t status;
-
-GripperMotor_GetStatus(&status);
-if (status.homed && status.faults == GRIPPER_FAULT_NONE)
-{
-  (void)GripperMotor_SetPosition(500); /* 移动到行程中点 */
-}
-```
-
-`GripperMotorStatus_t` 可读取当前状态、故障、原始多圈计数、开闭端点、归一化位置、目标位置、速度、Iq、母线电流、电压和编码器错误计数。
-
-## 8. 故障与安全机制
-
-以下故障会锁存并强制关闭六路 PWM：
-
-- KTH7812 SPI 连续错误；
-- MCSDK 电流环或速度反馈故障；
-- ADC2 母线电流模拟看门狗越界；
-- 母线欠压或过压；
-- 回零超时；
-- 回零行程超过 20 圈；
-- 机械堵转异常。
-
-外接 NTC 的 PA3 ADC 采样已经配置，但原理图只给出了板端 10 kΩ 上拉，没有给出所接 NTC 的 R25 和 Beta 参数。当前未启用过温关断，获得 NTC 型号后必须标定温度曲线和阈值。
-
-## 9. 编译和烧录
-
-### UART2 调试输出
-
-调试串口使用板载 UART2 接口：PD5 为 MCU TX，PD6 为 MCU RX，参数为 921600 baud、8 数据位、无校验、1 停止位。
-
-当前默认源码为`FOC32`的“纯Iq电流环0.5A持续运行”测试：`CURRENT_ADC_CALIBRATION_MODE=0`、`PWM_INSPECTION_MODE=0`。FOC29已确认编码器方向需要`-1`，FOC31已验证速度环可以跑到3000rpm；本版回到纯电流环，只给`Iq=0.5A、Id=0A`，用于继续观察电流环稳定性和电机响应。
-
-示例：
+Keil 工程：
 
 ```text
-RST,raw=0x00E00000,bor=1,pin=1,por=1,soft=0,iwdg=0,wwdg=0,lpwr=0,cpu=0
-PWM,f=16000,duty=10,arr=8592,ccr=859,dtg=137,ccer=0x00000555,bdtr=0x00008C89,cnt=1234,err=0x00
+MDK-ARM/TactileGripper_H723VGH6.uvprojx
 ```
 
-### 当前纯电流环配置（FOC32）
+修改 CubeMX `.ioc` 并重新生成代码时，需要保留：
 
-- PWM频率：10kHz中心对齐互补PWM。
-- TIM1 CKD：DIV1；计数器预分频为2，避免MCSDK的16位SVPWM周期常量溢出；`DTG=137`，MCU实际死区约500ns。
-- 串口2发送字符`P`启动，发送`S`或`s`停止。
-- 启动前用`Id=300mA`在500ms内平滑完成电角度对齐，确保转子确实拉到已知位置；进入RUN后`Id`参考回到0。
-- KTH7812方向保持为`-1`，机械角、速度反馈和FOC电角度方向已由FOC29验证。
-- 对齐完成后不再下速度目标，而是通过`MC_SetCurrentReferenceMotor1_F()`持续写入`Iq=0.5A、Id=0A`。
-- Iq目标用800ms斜坡从0A升到0.5A，之后一直保持，直到串口发送`S`或`s`停止。
-- 软件dq电流保护阈值900mA，电机轴超过3500rpm仍会立即关闭PWM，防止纯电流环空载意外拉高转速。
-- 当前NTC尚未标定，持续堵转测试时需要人工监控电机、MOS和分流电阻温升。
-- 看到`FOC32,READY`后只发送一次字符`P`。
-- 运行时日志使用固定三环格式：`current/speed/position: iqr,idr,iq,id,speedr,speed,posr,pos`。
-- 本版保留MCSDK `R3_2`驱动原有的`Iab`符号，重点观察`Iq=500mA、Id=0`时三相电流、实际FOC角度和编码器角度是否稳定。
-- `RAW`日志打印`sec/j1/j2/ofs/ccr`，用于确认MCSDK当前扇区实际读取了哪两个ADC通道。
-- 启动前检查A/B/C三相零偏，任一零偏无效都会输出`phase_offset_invalid`并拒绝PWM。
-- `FOC32,RUN`表示已经进入纯电流环；正常日志里`iqr`最终应接近500mA，`idr`为0。
-- 冒号后只打印数值，不带字段名；电流单位为mA，速度单位为rpm，位置单位为编码器多圈计数。
-- 发送`S`后输出`FOC32,STOP`和`FOC32,COMPLETE,current_loop_test=1,pwm=off`。
-- 模式切换位置：`MotorControl/Src/gripper_motor_service.c`顶部的`COMMISSIONING_CONTROL_MODE`，改成`COMMISSIONING_CONTROL_MODE_SPEED`即可回到速度外环测试；同时`MotorControl/Inc/drive_parameters.h`里的`DEFAULT_CONTROL_MODE`当前设为`MCM_TORQUE_MODE`，若长期跑速度模式可以改回`MCM_SPEED_MODE`。
+- `Core/Inc/FreeRTOSConfig.h` 中 2000 Hz tick；
+- `Core/Src/main.c` 中电机服务和夹爪服务任务创建；
+- Keil 中 `Application/Gripper/Inc` 包含路径和应用源文件；
+- SPI3、PC12和DMA1 Stream2状态灯配置；
+- MCSDK、KTH7812 与板级 ADC/TIM 配置。
 
-### 当前启用的安全诊断（PWM6）
+本次架构调整未执行 Keil 编译，需在本机 Keil 中完成全量构建后再烧录。
 
-- `PWM_INSPECTION_MODE=1`时，MCSDK与FOC任务不会启动，FOC32测试会被禁用。
-- 串口看到`PWM6,READY`后只发送一次字符`P`。
-- 输出一个`U正、V/W负`的极小固定电压矢量，持续10ms后强制关闭六路PWM。
-- 同步采集U、W两路原始ADC，并根据三相电流和为零估算V相变化量。
-- 若仍出现BOR/POR复位，优先检查12V/5V/3.3V供电和功率地回流；若不复位，则问题位于FOC闭环或角度/相序配置。
+## 12. 首次机构联调顺序
 
-### PWM7正反矢量与三相极性测试
-
-- 当前主程序调用PWM7，FOC和编码器对齐均不运行。
-- 共四步：正向矢量U/W、正向矢量U/V、反向矢量U/W、反向矢量U/V。
-- 每看到一次`PWM7,READY`后发送一次`P`，每步仅输出5ms并立即关闭PWM。
-- V相通过ADC2通道14直接采集，不再只依靠三相和为零进行估算。
-- 正反矢量的U/V/W变化量应整体反号；任一路连续三次超过1000计数立即中止。
-- 本档仍保留500mA软件保护；出现复位、异常电流或电源限流时不要连续重试。
-
-### 当前启用的安全诊断（PWM8）
-
-- 当前主程序调用PWM8，FOC和编码器对齐均不运行。
-- 共四步：正向矢量U/W、正向矢量U/V、反向矢量U/W、反向矢量U/V。
-- 每看到一次`PWM8,READY`后发送一次`P`，每步内部先执行`BASE`再执行`VEC`，每段8ms，段间自动关断。
-- `BASE`为三相50%占空；`VEC`为U相±20计数、V/W相反向各∓10计数的小矢量。
-- 重点看`PWM8,DONE`里的`dU`、`dV`或`dW`，它们是微矢量平均值减去同条件基线平均值后的结果，可用于排除零点漂移和开关共模噪声。
-- 任一路连续三次超过1000计数立即中止；出现BOR/POR复位、电源限流或明显异响时停止测试，不要连续重试。
-
-字段说明：
-
-- `RST`打印上次复位原因；重点关注`bor`、`iwdg`和`wwdg`；
-- `PWM`每500 ms打印一次TIM1配置；`err=0x00`表示六路输出均成功启动；
-- PE9/PE8为U高/低，PE11/PE10为V高/低，PE13/PE12为W高/低；
-- 每对高低侧必须互补且无重叠，MCU死区目标约500 ns；
-- 检查完成后将`PWM_INSPECTION_MODE`改为0，才能恢复电流环联调流程。
-
-推荐用 USB 转 TTL 模块连接：板卡 UART2_TX 接转换器 RX，UART2_RX 接转换器 TX，并共地。电平必须为 3.3 V TTL。
-
-使用 Keil MDK ARMCC 5.06 打开：
-
-`MDK-ARM/TactileGripper_H723VGH6.uvprojx`
-
-当前工程已通过全量构建：
-
-- 0 Error；
-- 0 Warning；
-- 生成 AXF 和 HEX 文件。
-
-HEX 默认输出位置：
-
-`MDK-ARM/TactileGripper_H723VGH6/TactileGripper_H723VGH6.hex`
-
-单元测试在仓库外层目录执行：
-
-```powershell
-python -m unittest discover -s Tests -p "test_*.py" -v
-```
-
-## 10. CubeMX `.ioc` 使用注意事项
-
-`TactileGripper_H723VGH6.ioc` 已同步当前硬件资源、时钟和外设配置，包括 ADC1/2、TIM1、SPI1、USART1 DMA、NVIC、TIM6 HAL 时基和 FreeRTOS。
-
-仍需注意：
-
-1. CubeMX 6.17 的 FreeRTOS 配置界面把 tick 输入上限限制为 1000 Hz，本工程使用 2000 Hz。重新生成后必须确认 `Core/Inc/FreeRTOSConfig.h` 中 `configTICK_RATE_HZ` 仍为 2000；
-2. MCSDK 板级配置、KTH7812 驱动和夹爪任务并非 CubeMX 自动生成内容；
-3. 重新生成前应备份工程，并对比 `main.c`、`stm32h7xx_hal_msp.c`、`stm32h7xx_it.c`、`FreeRTOSConfig.h` 和 Keil 工程文件；
-4. 不要用旧 H745 工程的 TIM2 编码器、STDRIVE102BP 或双核配置覆盖当前 H723 配置。
-
-## 11. 首次上板顺序
-
-首次测试建议使用 24 V 限流电源，并先拆除机械负载：
-
-1. 不接电机，检查 PE8～PE13 六路 PWM、互补关系和死区；
-2. 检查三相电流和母线电流零偏是否约为 1.65 V；
-3. 检查 VBUS 换算；
-4. 手动转动电机，确认16位编码器角度、跨零和方向；
-5. 以 0.3 A 验证对齐方向；
-6. 验证相序和低速电流环；
-7. 再验证速度环、双端回零和 0～1000 位置控制；
-8. 最后逐项触发编码器、过流、欠压、过压和堵转故障，确认 PWM 能立即关闭。
+1. 抬起夹爪，确认机构全行程无硬性卡死；
+2. 使用限流电源，准备随时断电；
+3. 上电先观察 `homing:` 日志，回零完成后确认恢复 `position:` 日志；
+4. 若首次寻找方向不是开端，立即断电并修改 `GRIPPER_OPEN_DIRECTION`；
+5. 验证开端堵转后能自动反向寻找闭端；
+6. 输入 `Q`，确认 `homed=1` 且开闭计数间距合理；
+7. 依次测试 `G100`、`G500`、`G900`，暂不直接命令端点；
+8. 确认位置环无振荡后再测试 `G0` 和 `G1000`；
+9. 最后验证 `S`、编码器断线和故障清除流程。

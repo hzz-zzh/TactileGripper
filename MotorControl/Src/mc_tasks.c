@@ -103,7 +103,11 @@ __weak void MCboot( MCI_Handle_t* pMCIList[NBR_OF_MOTORS] )
     pMCIList[M1] = &Mci[M1];
     FOC_Init();
 
-    ASPEP_start(&aspepOverUartA);
+    /*
+     * USART1当前让给调试控制台使用，暂不启动Motor Pilot/ASPEP。
+     * 需要恢复Motor Pilot时，应先把调试串口迁回其他USART。
+     */
+    /* ASPEP_start(&aspepOverUartA); */
     /* USER CODE BEGIN MCboot 1 */
 
     /* USER CODE END MCboot 1 */

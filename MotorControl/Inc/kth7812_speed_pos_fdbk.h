@@ -11,6 +11,7 @@ extern "C" {
 #define KTH7812_COUNTS_PER_TURN       65536L
 #define KTH7812_DIRECTION             (-1) /* 按当前相序将编码器机械角和电角度方向反向。 */
 #define KTH7812_MAX_CONSECUTIVE_ERRORS 3U
+#define KTH7812_SPEED_FILTER_SAMPLES   2U
 /* 10kHz采样时，7790rpm约为851计数/次；保留约20%的速度裕量。 */
 #define KTH7812_MAX_DELTA_PER_UPDATE  1024L
 
@@ -29,6 +30,10 @@ typedef struct
   uint16_t nss_pin;
   int32_t multi_turn_count;
   int32_t speed_sample_count;
+  int32_t speed_filter_sum;
+  int16_t speed_filter_buffer[KTH7812_SPEED_FILTER_SAMPLES];
+  uint8_t speed_filter_index;
+  uint8_t speed_filter_count;
   int16_t electrical_offset;
   uint16_t last_raw;
   uint16_t raw_angle;

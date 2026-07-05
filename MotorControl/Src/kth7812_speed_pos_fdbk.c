@@ -3,6 +3,7 @@
 #include "parameters_conversion.h"
 
 #include <limits.h>
+#include <string.h>
 
 KTH7812_Handle_t KTH7812_M1 =
 {
@@ -96,6 +97,10 @@ void KTH7812_Clear(KTH7812_Handle_t *handle)
 {
   handle->multi_turn_count = (int32_t)handle->raw_angle;
   handle->speed_sample_count = handle->multi_turn_count;
+  handle->speed_filter_sum = 0;
+  handle->speed_filter_index = 0U;
+  handle->speed_filter_count = 0U;
+  memset(handle->speed_filter_buffer, 0, sizeof(handle->speed_filter_buffer));
   handle->last_raw = (int16_t)handle->raw_angle;
   handle->_Super.hAvrMecSpeedUnit = 0;
   handle->_Super.hElSpeedDpp = 0;
@@ -180,18 +185,35 @@ KTH7812_Status_t KTH7812_Update(KTH7812_Handle_t *handle)
 bool KTH7812_CalcAvrgMecSpeedUnit(KTH7812_Handle_t *handle, int16_t *speed_unit)
 {
   int32_t delta = handle->multi_turn_count - handle->speed_sample_count;
-  int32_t speed = (delta * (int32_t)SPEED_LOOP_FREQUENCY_HZ * SPEED_UNIT) /
-                  KTH7812_COUNTS_PER_TURN;
+  int32_t raw_speed = (delta * (int32_t)SPEED_LOOP_FREQUENCY_HZ * SPEED_UNIT) /
+                      KTH7812_COUNTS_PER_TURN;
+  int32_t speed;
 
   handle->speed_sample_count = handle->multi_turn_count;
-  if (speed > INT16_MAX)
+  if (raw_speed > INT16_MAX)
   {
-    speed = INT16_MAX;
+    raw_speed = INT16_MAX;
   }
-  else if (speed < INT16_MIN)
+  else if (raw_speed < INT16_MIN)
   {
-    speed = INT16_MIN;
+    raw_speed = INT16_MIN;
   }
+
+  /* 2点滑动平均抑制量化噪声，同时减少负载扰动传递到速度环的反馈延迟。 */
+  handle->speed_filter_sum -=
+    handle->speed_filter_buffer[handle->speed_filter_index];
+  handle->speed_filter_buffer[handle->speed_filter_index] = (int16_t)raw_speed;
+  handle->speed_filter_sum += raw_speed;
+  handle->speed_filter_index++;
+  if (handle->speed_filter_index >= KTH7812_SPEED_FILTER_SAMPLES)
+  {
+    handle->speed_filter_index = 0U;
+  }
+  if (handle->speed_filter_count < KTH7812_SPEED_FILTER_SAMPLES)
+  {
+    handle->speed_filter_count++;
+  }
+  speed = handle->speed_filter_sum / (int32_t)handle->speed_filter_count;
 
   handle->_Super.hAvrMecSpeedUnit = (int16_t)speed;
   *speed_unit = (int16_t)speed;

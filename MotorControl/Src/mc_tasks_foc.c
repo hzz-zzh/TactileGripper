@@ -265,7 +265,9 @@ __weak void TSK_MediumFrequencyTaskM1(void)
               VSS_SetMecAngle(&VirtualSpeedSensorM1, alignmentAngleM1);
               STC_SetControlMode(pSTC[M1], MCM_TORQUE_MODE);
               (void)STC_ExecRamp(pSTC[M1], 0, 0U);
-              (void)STC_ExecRamp(pSTC[M1], FINAL_I_ALIGNMENT, M1_ALIGNMENT_DURATION);
+              /* 电流先快速建立，再在固定磁场下保持，避免爬升结束即退出对齐。 */
+              (void)STC_ExecRamp(pSTC[M1], FINAL_I_ALIGNMENT,
+                                 M1_ALIGNMENT_CURRENT_RAMP_MS);
               alignmentTicksM1 = (uint16_t)(((uint32_t)M1_ALIGNMENT_DURATION *
                                               MEDIUM_FREQUENCY_TASK_RATE) / 1000U);
               Mci[M1].State = ALIGNMENT;

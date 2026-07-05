@@ -25,8 +25,11 @@
 /* USER CODE BEGIN Includes */
 #include "motorcontrol.h"
 #include "parameters_conversion.h"
-#include "gripper_motor_service.h"
+#include "motor_control_service.h"
+#include "gripper_service.h"
+#include "status_indicator.h"
 #include "debug_monitor.h"
+#include "debug_uart_transport.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -51,11 +54,13 @@
 ADC_HandleTypeDef hadc1;
 ADC_HandleTypeDef hadc2;
 SPI_HandleTypeDef hspi1;
+SPI_HandleTypeDef hspi3;
 TIM_HandleTypeDef htim1;
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
 DMA_HandleTypeDef hdma_usart1_rx;
 DMA_HandleTypeDef hdma_usart1_tx;
+DMA_HandleTypeDef hdma_spi3_tx;
 
 /* Definitions for defaultTask */
 osThreadId_t defaultTaskHandle;
@@ -76,6 +81,7 @@ static void MX_DMA_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_ADC2_Init(void);
 static void MX_SPI1_Init(void);
+static void MX_SPI3_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_USART2_UART_Init(void);
@@ -133,9 +139,11 @@ int main(void)
   MX_ADC1_Init();
   MX_ADC2_Init();
   MX_SPI1_Init();
+  MX_SPI3_Init();
   MX_TIM1_Init();
   MX_USART1_UART_Init();
   MX_USART2_UART_Init();
+  DebugUartTransport_Init(&huart1);
 #if PWM_INSPECTION_MODE
   DebugMonitor_RunPwmBaselineVectorInspection(bootResetFlags);
 #else
@@ -156,6 +164,7 @@ int main(void)
 
   /* Init scheduler */
   osKernelInitialize();
+  DebugUartTransport_Init(&huart1);
 
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */
@@ -178,7 +187,9 @@ int main(void)
   defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
-  GripperMotorService_CreateTasks();
+  MotorControlService_CreateTasks();
+  GripperService_CreateTask();
+  StatusIndicator_CreateTask();
   DebugMonitor_CreateTask();
   /* USER CODE END RTOS_THREADS */
 
@@ -456,6 +467,36 @@ static void MX_SPI1_Init(void)
   }
 }
 
+static void MX_SPI3_Init(void)
+{
+  hspi3.Instance = SPI3;
+  hspi3.Init.Mode = SPI_MODE_MASTER;
+  hspi3.Init.Direction = SPI_DIRECTION_2LINES;
+  hspi3.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi3.Init.CLKPolarity = SPI_POLARITY_LOW;
+  hspi3.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi3.Init.NSS = SPI_NSS_SOFT;
+  hspi3.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
+  hspi3.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi3.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi3.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi3.Init.CRCPolynomial = 0;
+  hspi3.Init.NSSPMode = SPI_NSS_PULSE_DISABLE;
+  hspi3.Init.NSSPolarity = SPI_NSS_POLARITY_LOW;
+  hspi3.Init.FifoThreshold = SPI_FIFO_THRESHOLD_01DATA;
+  hspi3.Init.TxCRCInitializationPattern = SPI_CRC_INITIALIZATION_ALL_ZERO_PATTERN;
+  hspi3.Init.RxCRCInitializationPattern = SPI_CRC_INITIALIZATION_ALL_ZERO_PATTERN;
+  hspi3.Init.MasterSSIdleness = SPI_MASTER_SS_IDLENESS_00CYCLE;
+  hspi3.Init.MasterInterDataIdleness = SPI_MASTER_INTERDATA_IDLENESS_00CYCLE;
+  hspi3.Init.MasterReceiverAutoSusp = SPI_MASTER_RX_AUTOSUSP_DISABLE;
+  hspi3.Init.MasterKeepIOState = SPI_MASTER_KEEP_IO_STATE_ENABLE;
+  hspi3.Init.IOSwap = SPI_IO_SWAP_DISABLE;
+  if (HAL_SPI_Init(&hspi3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
 static void MX_TIM1_Init(void)
 {
   TIM_MasterConfigTypeDef master = {0};
@@ -524,7 +565,7 @@ static void MX_TIM1_Init(void)
 static void MX_USART1_UART_Init(void)
 {
   huart1.Instance = USART1;
-  huart1.Init.BaudRate = 1843200;
+  huart1.Init.BaudRate = 921600;
   huart1.Init.WordLength = UART_WORDLENGTH_8B;
   huart1.Init.StopBits = UART_STOPBITS_1;
   huart1.Init.Parity = UART_PARITY_NONE;
@@ -580,6 +621,10 @@ static void MX_NVIC_Init(void)
   HAL_NVIC_EnableIRQ(USART1_IRQn);
   HAL_NVIC_SetPriority(USART2_IRQn, 6, 0);
   HAL_NVIC_EnableIRQ(USART2_IRQn);
+  HAL_NVIC_SetPriority(DMA1_Stream2_IRQn, 7, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream2_IRQn);
+  HAL_NVIC_SetPriority(SPI3_IRQn, 7, 0);
+  HAL_NVIC_EnableIRQ(SPI3_IRQn);
 }
 
 /**
@@ -598,6 +643,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
+  __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOE_CLK_ENABLE();
 
   GPIO_InitStruct.Pin = M1_CURR_AMPL_U_Pin | M1_CURR_AMPL_V_Pin |

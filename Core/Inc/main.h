@@ -100,17 +100,21 @@ void Error_Handler(void);
 #define KTH7812_NSS_Pin            GPIO_PIN_15
 #define KTH7812_NSS_GPIO_Port      GPIOA
 
-/* Motor Pilot / ASPEP UART. */
+/* USART1 pins. 当前调试控制台使用PA9/PA10，Motor Pilot/ASPEP暂时停用。 */
 #define MOTOR_PILOT_TX_Pin         GPIO_PIN_9
 #define MOTOR_PILOT_TX_GPIO_Port   GPIOA
 #define MOTOR_PILOT_RX_Pin         GPIO_PIN_10
 #define MOTOR_PILOT_RX_GPIO_Port   GPIOA
 
-/* Human-readable debug console on the board UART2 connector. */
+/* USART2端子保留，当前不作为调试控制台。 */
 #define DEBUG_UART_TX_Pin          GPIO_PIN_5
 #define DEBUG_UART_TX_GPIO_Port    GPIOD
 #define DEBUG_UART_RX_Pin          GPIO_PIN_6
 #define DEBUG_UART_RX_GPIO_Port    GPIOD
+
+/* WS2812E-1313 status indicator driven by SPI3 MOSI. */
+#define STATUS_LED_DATA_Pin        GPIO_PIN_12
+#define STATUS_LED_DATA_GPIO_Port  GPIOC
 
 /* MCSDK compatibility: low sides are driven by TIM1 complementary outputs. */
 #define M1_PWM_EN_U_Pin            GPIO_PIN_0

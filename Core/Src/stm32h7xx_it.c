@@ -61,7 +61,10 @@
 
 /* External variables --------------------------------------------------------*/
 extern TIM_HandleTypeDef htim6;
+extern UART_HandleTypeDef huart1;
 extern UART_HandleTypeDef huart2;
+extern SPI_HandleTypeDef hspi3;
+extern DMA_HandleTypeDef hdma_spi3_tx;
 
 /* USER CODE BEGIN EV */
 
@@ -216,44 +219,23 @@ void TIM1_BRK_IRQHandler(void)
 
 void USART1_IRQHandler(void)
 {
-  uint32_t activeIdleFlag;
-  uint32_t isEnabledIdleFlag;
-
-  if (LL_USART_IsActiveFlag_TC(USARTA) != 0U)
-  {
-    LL_DMA_DisableStream(DMA_TX_A, DMACH_TX_A);
-    LL_USART_ClearFlag_TC(USARTA);
-    ASPEP_HWDataTransmittedIT(&aspepOverUartA);
-  }
-
-  if ((LL_USART_IsActiveFlag_ORE(USARTA) || LL_USART_IsActiveFlag_FE(USARTA) ||
-       LL_USART_IsActiveFlag_NE(USARTA)) && LL_USART_IsEnabledIT_ERROR(USARTA))
-  {
-    LL_USART_DisableIT_ERROR(USARTA);
-    LL_USART_EnableIT_IDLE(USARTA);
-  }
-
-  activeIdleFlag = LL_USART_IsActiveFlag_IDLE(USARTA);
-  isEnabledIdleFlag = LL_USART_IsEnabledIT_IDLE(USARTA);
-  if ((activeIdleFlag & isEnabledIdleFlag) != 0U)
-  {
-    LL_USART_ClearFlag_FE(USARTA);
-    LL_USART_ClearFlag_ORE(USARTA);
-    LL_USART_ClearFlag_NE(USARTA);
-    LL_USART_DisableIT_IDLE(USARTA);
-    LL_USART_EnableIT_ERROR(USARTA);
-    LL_USART_DisableDMAReq_RX(USARTA);
-    (void)LL_USART_ReceiveData8(USARTA);
-    LL_USART_EnableDMAReq_RX(USARTA);
-    LL_DMA_ClearFlag_TE(DMA_RX_A, DMACH_RX_A);
-    LL_DMA_ClearFlag_TC(DMA_RX_A, DMACH_RX_A);
-    ASPEP_HWReset(&aspepOverUartA);
-  }
+  /* USART1当前作为人类可读调试串口，接收命令走HAL单字节中断。 */
+  HAL_UART_IRQHandler(&huart1);
 }
 
 void USART2_IRQHandler(void)
 {
   HAL_UART_IRQHandler(&huart2);
+}
+
+void DMA1_Stream2_IRQHandler(void)
+{
+  HAL_DMA_IRQHandler(&hdma_spi3_tx);
+}
+
+void SPI3_IRQHandler(void)
+{
+  HAL_SPI_IRQHandler(&hspi3);
 }
 
 /* USER CODE BEGIN 1 */

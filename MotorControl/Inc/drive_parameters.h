@@ -70,8 +70,9 @@
 #define TF_KDDIV_LOG                        LOG2((8192))
 #define TFDIFFERENTIAL_TERM_ENABLING        DISABLE
 
-#define PID_SPEED_KP_DEFAULT                800/(SPEED_UNIT/10) /* Conservative initial tuning */
-#define PID_SPEED_KI_DEFAULT                80/(SPEED_UNIT/10)
+/* 比例项负责快速抵抗负载扰动，积分项保持较慢，避免减速机构下积累后产生反向过冲。 */
+#define PID_SPEED_KP_DEFAULT                9000/(SPEED_UNIT/10)
+#define PID_SPEED_KI_DEFAULT                500/(SPEED_UNIT/10)
 #define PID_SPEED_KD_DEFAULT                0/(SPEED_UNIT/10) /* Workbench compute the gain for 01Hz unit*/
 
 /* Speed control loop */
@@ -90,7 +91,7 @@
 /* USER CODE END PID_SPEED_INTEGRAL_INIT_DIV */
 
 #define SPD_DIFFERENTIAL_TERM_ENABLING      DISABLE
-#define IQMAX_A                             1.0
+#define IQMAX_A                             2.0
 
 /* Default settings */
 #define DEFAULT_CONTROL_MODE                MCM_SPEED_MODE /*!< 当前位置模式需要速度环作为内层目标，默认进入速度模式。 */
@@ -117,9 +118,10 @@
 
 /******************************   START-UP PARAMETERS   **********************/
 /* Encoder alignment */
-#define M1_ALIGNMENT_DURATION               500 /*!< 使用500毫秒缓慢建立对齐电流，确保转子稳定到目标电角度。 */
+#define M1_ALIGNMENT_DURATION               800 /*!< 对齐总时间，包含电流爬升和稳态保持阶段。 */
+#define M1_ALIGNMENT_CURRENT_RAMP_MS        200 /*!< 对齐电流在200毫秒内建立，随后保持到对齐结束。 */
 #define M1_ALIGNMENT_ANGLE_DEG              90 /*!< degrees [0...359] */
-#define FINAL_I_ALIGNMENT_A                 0.30 /*!< 使用300毫安完成启动对齐，然后进入当前选择的电流环或速度环调试。 */
+#define FINAL_I_ALIGNMENT_A                 0.50 /*!< 提高对齐转矩，克服减速机构静摩擦并稳定建立电角度零偏。 */
 /* With ALIGNMENT_ANGLE_DEG equal to 90 degrees final alignment */
 /* phase current = (FINAL_I_ALIGNMENT * 1.65/ Av)/(32767 * Rshunt) */
 /* being Av the voltage gain between Rshunt and A/D input */
