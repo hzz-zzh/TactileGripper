@@ -90,7 +90,7 @@ void Error_Handler(void);
 #define M1_TEMPERATURE_Pin         GPIO_PIN_3
 #define M1_TEMPERATURE_GPIO_Port   GPIOA
 
-/* KTH7812 absolute encoder on SPI1. NSS is controlled by software. */
+/* KTH7812绝对编码器使用SPI1，PA15由SPI硬件NSS自动控制。 */
 #define KTH7812_SCK_Pin            GPIO_PIN_3
 #define KTH7812_SCK_GPIO_Port      GPIOB
 #define KTH7812_MISO_Pin           GPIO_PIN_4

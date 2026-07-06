@@ -12,6 +12,9 @@ extern "C" {
 #define KTH7812_DIRECTION             (-1) /* 按当前相序将编码器机械角和电角度方向反向。 */
 #define KTH7812_MAX_CONSECUTIVE_ERRORS 3U
 #define KTH7812_SPEED_FILTER_SAMPLES   2U
+#define KTH7812_SPI_CRC_OUTPUT         1U
+/* -C版本输出为12bit角度+4bit CRC。调试阶段先只剥离CRC位，不因CRC不匹配关断电机。 */
+#define KTH7812_SPI_CRC_CHECK_ENABLE   0U
 /* 10kHz采样时，7790rpm约为851计数/次；保留约20%的速度裕量。 */
 #define KTH7812_MAX_DELTA_PER_UPDATE  1024L
 
@@ -19,6 +22,7 @@ typedef enum
 {
   KTH7812_OK = 0,
   KTH7812_ERROR_SPI,
+  KTH7812_ERROR_CRC,
   KTH7812_ERROR_PLAUSIBILITY
 } KTH7812_Status_t;
 
@@ -38,8 +42,12 @@ typedef struct
   uint16_t last_raw;
   uint16_t raw_angle;
   uint16_t last_frame;
+  uint16_t last_position12;
+  uint8_t last_received_crc;
+  uint8_t last_calculated_crc;
   uint32_t frame_count;
   uint32_t spi_error_count;
+  uint32_t crc_error_count;
   uint32_t plausibility_error_count;
   uint8_t consecutive_errors;
   int8_t direction;

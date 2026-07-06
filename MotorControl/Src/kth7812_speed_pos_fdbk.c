@@ -5,6 +5,8 @@
 #include <limits.h>
 #include <string.h>
 
+#define KTH7812_SPI_TIMEOUT_LOOPS  5000U
+
 KTH7812_Handle_t KTH7812_M1 =
 {
   ._Super =
@@ -22,6 +24,77 @@ KTH7812_Handle_t KTH7812_M1 =
   .reliable = false
 };
 
+static uint8_t KTH7812_Reflect4(uint8_t value)
+{
+  return (uint8_t)((((value >> 0) & 0x01U) << 3) |
+                   (((value >> 1) & 0x01U) << 2) |
+                   (((value >> 2) & 0x01U) << 1) |
+                   (((value >> 3) & 0x01U) << 0));
+}
+
+static uint8_t KTH7812_CalcCrc4Itu(uint16_t position12)
+{
+  uint8_t crc = 0U;
+  int8_t bit;
+  uint8_t i;
+
+  /*
+   * 手册示例：位置0x0FF时CRC为0x2。按MSB-first输入12位位置数据，
+   * 多项式x4+x+1，最后输出反转，可得到与手册一致的结果。
+   */
+  for (bit = 11; bit >= 0; --bit)
+  {
+    uint8_t top = (uint8_t)((crc >> 3) & 0x01U);
+    crc = (uint8_t)(((crc << 1) & 0x0FU) |
+                    ((position12 >> bit) & 0x01U));
+    if (top != 0U)
+    {
+      crc ^= 0x03U;
+    }
+  }
+
+  for (i = 0U; i < 4U; ++i)
+  {
+    uint8_t top = (uint8_t)((crc >> 3) & 0x01U);
+    crc = (uint8_t)((crc << 1) & 0x0FU);
+    if (top != 0U)
+    {
+      crc ^= 0x03U;
+    }
+  }
+
+  return KTH7812_Reflect4(crc);
+}
+
+static bool KTH7812_DecodeFrame(KTH7812_Handle_t *handle,
+                                uint16_t frame,
+                                uint16_t *raw_angle)
+{
+#if KTH7812_SPI_CRC_OUTPUT
+  uint16_t position12 = (uint16_t)(frame >> 4);
+  uint8_t receivedCrc = (uint8_t)(frame & 0x0FU);
+  uint8_t calculatedCrc = KTH7812_CalcCrc4Itu(position12);
+
+  handle->last_position12 = position12;
+  handle->last_received_crc = receivedCrc;
+  handle->last_calculated_crc = calculatedCrc;
+
+  if (receivedCrc != calculatedCrc)
+  {
+    handle->crc_error_count++;
+#if KTH7812_SPI_CRC_CHECK_ENABLE
+    return false;
+#endif
+  }
+
+  /* C版本只有12bit角度，左移4位后继续保持65536 count/turn的软件单位。 */
+  *raw_angle = (uint16_t)(position12 << 4);
+#else
+  *raw_angle = frame;
+#endif
+  return true;
+}
+
 static KTH7812_Status_t KTH7812_ReadFrame(KTH7812_Handle_t *handle, uint16_t *frame)
 {
   uint32_t timeout;
@@ -34,7 +107,7 @@ static KTH7812_Status_t KTH7812_ReadFrame(KTH7812_Handle_t *handle, uint16_t *fr
   SET_BIT(spi->CR1, SPI_CR1_SPE);
   SET_BIT(spi->CR1, SPI_CR1_CSTART);
 
-  timeout = 20000U;
+  timeout = KTH7812_SPI_TIMEOUT_LOOPS;
   while (((spi->SR & SPI_SR_TXP) == 0U) && (timeout > 0U))
   {
     timeout--;
@@ -85,6 +158,10 @@ void KTH7812_Init(KTH7812_Handle_t *handle, SPI_HandleTypeDef *spi,
   handle->spi_error_count = 0U;
   handle->frame_count = 0U;
   handle->last_frame = 0U;
+  handle->last_position12 = 0U;
+  handle->last_received_crc = 0U;
+  handle->last_calculated_crc = 0U;
+  handle->crc_error_count = 0U;
   handle->plausibility_error_count = 0U;
   handle->consecutive_errors = 0U;
   handle->initialized = false;
@@ -110,7 +187,7 @@ void KTH7812_Clear(KTH7812_Handle_t *handle)
 KTH7812_Status_t KTH7812_Update(KTH7812_Handle_t *handle)
 {
   uint16_t frame;
-  uint16_t raw;
+  uint16_t raw = 0U;
   int32_t delta;
   int32_t electrical;
   KTH7812_Status_t status = KTH7812_ReadFrame(handle, &frame);
@@ -118,7 +195,10 @@ KTH7812_Status_t KTH7812_Update(KTH7812_Handle_t *handle)
   if (status == KTH7812_OK)
   {
     handle->last_frame = frame;
-    raw = frame;
+    if (!KTH7812_DecodeFrame(handle, frame, &raw))
+    {
+      status = KTH7812_ERROR_CRC;
+    }
   }
 
   if (status != KTH7812_OK)
@@ -145,9 +225,16 @@ KTH7812_Status_t KTH7812_Update(KTH7812_Handle_t *handle)
   /* Signed 16-bit subtraction unwraps the 0xFFFF/0x0000 crossing. */
   delta = (int32_t)(int16_t)(raw - handle->last_raw);
 
-  /* 16 kHz下即使达到最高转速，单周期变化也远小于1024；拒绝SPI毛刺角度。 */
-  if ((delta > KTH7812_MAX_DELTA_PER_UPDATE) ||
-      (delta < -KTH7812_MAX_DELTA_PER_UPDATE))
+  /*
+   * 当前内部角度单位为65536 count/turn。若上一两帧因CRC或SPI错误被丢弃，
+   * 下一帧的真实位移会累计，因此跳变门限按连续错误数适当放宽。
+   */
+
+  /* 10kHz下即使达到最高转速，单周期变化也远小于1024 count；拒绝SPI毛刺角度。 */
+  if ((delta > ((int32_t)KTH7812_MAX_DELTA_PER_UPDATE *
+                ((int32_t)handle->consecutive_errors + 1L))) ||
+      (delta < -((int32_t)KTH7812_MAX_DELTA_PER_UPDATE *
+                 ((int32_t)handle->consecutive_errors + 1L))))
   {
     handle->plausibility_error_count++;
     if (handle->consecutive_errors < UINT8_MAX)
