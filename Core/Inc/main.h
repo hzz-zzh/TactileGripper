@@ -18,7 +18,6 @@
   */
 /* USER CODE END Header */
 
-/* Define to prevent recursive inclusion -------------------------------------*/
 #ifndef __MAIN_H
 #define __MAIN_H
 
@@ -26,39 +25,13 @@
 extern "C" {
 #endif
 
-/* Includes ------------------------------------------------------------------*/
 #include "stm32h7xx_hal.h"
 
-/* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
 #include <stdbool.h>
-
 /* USER CODE END Includes */
 
-/* Exported types ------------------------------------------------------------*/
-/* USER CODE BEGIN ET */
-
-/* USER CODE END ET */
-
-/* Exported constants --------------------------------------------------------*/
-/* USER CODE BEGIN EC */
-
-/* USER CODE END EC */
-
-/* Exported macro ------------------------------------------------------------*/
-/* USER CODE BEGIN EM */
-
-/* USER CODE END EM */
-
-/* Exported functions prototypes ---------------------------------------------*/
 void Error_Handler(void);
-
-/* USER CODE BEGIN EFP */
-
-/* USER CODE END EFP */
-
-/* Private defines -----------------------------------------------------------*/
 
 /* USER CODE BEGIN Private defines */
 
@@ -100,17 +73,23 @@ void Error_Handler(void);
 #define KTH7812_NSS_Pin            GPIO_PIN_15
 #define KTH7812_NSS_GPIO_Port      GPIOA
 
-/* USART1 pins. 当前调试控制台使用PA9/PA10，Motor Pilot/ASPEP暂时停用。 */
-#define MOTOR_PILOT_TX_Pin         GPIO_PIN_9
-#define MOTOR_PILOT_TX_GPIO_Port   GPIOA
-#define MOTOR_PILOT_RX_Pin         GPIO_PIN_10
-#define MOTOR_PILOT_RX_GPIO_Port   GPIOA
+/* 触觉传感器串口：右侧使用 USART1，左侧使用 USART2。 */
+#define TACTILE_RIGHT_TX_Pin       GPIO_PIN_9
+#define TACTILE_RIGHT_TX_GPIO_Port GPIOA
+#define TACTILE_RIGHT_RX_Pin       GPIO_PIN_10
+#define TACTILE_RIGHT_RX_GPIO_Port GPIOA
+#define TACTILE_LEFT_TX_Pin        GPIO_PIN_5
+#define TACTILE_LEFT_TX_GPIO_Port  GPIOD
+#define TACTILE_LEFT_RX_Pin        GPIO_PIN_6
+#define TACTILE_LEFT_RX_GPIO_Port  GPIOD
 
-/* USART2端子保留，当前不作为调试控制台。 */
-#define DEBUG_UART_TX_Pin          GPIO_PIN_5
-#define DEBUG_UART_TX_GPIO_Port    GPIOD
-#define DEBUG_UART_RX_Pin          GPIO_PIN_6
-#define DEBUG_UART_RX_GPIO_Port    GPIOD
+/* RS485 调试口：PC13 高电平发送，低电平接收。 */
+#define RS485_DEBUG_RX_Pin         GPIO_PIN_2
+#define RS485_DEBUG_RX_GPIO_Port   GPIOE
+#define RS485_DEBUG_TX_Pin         GPIO_PIN_3
+#define RS485_DEBUG_TX_GPIO_Port   GPIOE
+#define RS485_DEBUG_DIR_Pin        GPIO_PIN_13
+#define RS485_DEBUG_DIR_GPIO_Port  GPIOC
 
 /* WS2812E-1313 status indicator driven by SPI3 MOSI. */
 #define STATUS_LED_DATA_Pin        GPIO_PIN_12

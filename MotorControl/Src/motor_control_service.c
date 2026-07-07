@@ -133,8 +133,8 @@ static void MotorControlService_MediumTask(void *argument)
   {
     next += 1U;
     /*
-     * USART1当前用于调试控制台，ASPEP未启动，不能再轮询其DMA接收标志。
-     * 恢复Motor Pilot时需要与mc_tasks.c中的ASPEP_start同步恢复。
+     * USART1 已分配给右侧触觉传感器，Motor Pilot/ASPEP 当前未启用。
+     * 恢复 Motor Pilot 时需要另选通信口，避免占用触觉采集链路。
      */
     MC_RunMotorControlTasks();
     (void)osDelayUntil(next);

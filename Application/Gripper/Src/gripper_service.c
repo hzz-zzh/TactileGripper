@@ -31,7 +31,7 @@ typedef struct
   uint32_t fault;
 } GripperCommand_t;
 
-extern UART_HandleTypeDef huart1;
+extern UART_HandleTypeDef huart10;
 
 static osThreadId_t gripperTaskHandle;
 static osMessageQueueId_t gripperCommandQueue;
@@ -378,7 +378,7 @@ void GripperService_CreateTask(void)
 
   gripperCommandQueue = osMessageQueueNew(GRIPPER_COMMAND_QUEUE_DEPTH,
                                           sizeof(GripperCommand_t), NULL);
-  DebugUartCommand_Init(&huart1);
+  DebugUartCommand_Init(&huart10);
   if (gripperCommandQueue != NULL)
   {
     gripperTaskHandle = osThreadNew(GripperService_Task, NULL, &taskAttr);

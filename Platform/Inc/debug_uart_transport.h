@@ -11,6 +11,10 @@ extern "C" {
 #endif
 
 void DebugUartTransport_Init(UART_HandleTypeDef *huart);
+void DebugUartTransport_InitRs485(UART_HandleTypeDef *huart,
+                                  GPIO_TypeDef *direction_port,
+                                  uint16_t direction_pin,
+                                  GPIO_PinState tx_enable_state);
 bool DebugUartTransport_Write(const char *text, uint32_t timeout_ms);
 
 #ifdef __cplusplus

@@ -191,7 +191,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart)
 {
   GPIO_InitTypeDef GPIO_InitStruct = {0};
   extern DMA_HandleTypeDef hdma_usart1_rx;
-  extern DMA_HandleTypeDef hdma_usart1_tx;
+  extern DMA_HandleTypeDef hdma_usart2_rx;
 
   if (huart->Instance == USART1)
   {
@@ -199,9 +199,9 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart)
     __HAL_RCC_GPIOA_CLK_ENABLE();
     __HAL_RCC_DMA1_CLK_ENABLE();
 
-    GPIO_InitStruct.Pin = MOTOR_PILOT_TX_Pin | MOTOR_PILOT_RX_Pin;
+    GPIO_InitStruct.Pin = TACTILE_RIGHT_TX_Pin | TACTILE_RIGHT_RX_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
     GPIO_InitStruct.Alternate = GPIO_AF7_USART1;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
@@ -214,41 +214,61 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart)
     hdma_usart1_rx.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
     hdma_usart1_rx.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
     hdma_usart1_rx.Init.Mode = DMA_NORMAL;
-    hdma_usart1_rx.Init.Priority = DMA_PRIORITY_LOW;
+    hdma_usart1_rx.Init.Priority = DMA_PRIORITY_HIGH;
     hdma_usart1_rx.Init.FIFOMode = DMA_FIFOMODE_DISABLE;
     if (HAL_DMA_Init(&hdma_usart1_rx) != HAL_OK)
     {
       Error_Handler();
     }
     __HAL_LINKDMA(huart, hdmarx, hdma_usart1_rx);
-
-    hdma_usart1_tx.Instance = DMA1_Stream1;
-    hdma_usart1_tx.Init.Request = DMA_REQUEST_USART1_TX;
-    hdma_usart1_tx.Init.Direction = DMA_MEMORY_TO_PERIPH;
-    hdma_usart1_tx.Init.PeriphInc = DMA_PINC_DISABLE;
-    hdma_usart1_tx.Init.MemInc = DMA_MINC_ENABLE;
-    hdma_usart1_tx.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
-    hdma_usart1_tx.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
-    hdma_usart1_tx.Init.Mode = DMA_NORMAL;
-    hdma_usart1_tx.Init.Priority = DMA_PRIORITY_LOW;
-    hdma_usart1_tx.Init.FIFOMode = DMA_FIFOMODE_DISABLE;
-    if (HAL_DMA_Init(&hdma_usart1_tx) != HAL_OK)
-    {
-      Error_Handler();
-    }
-    __HAL_LINKDMA(huart, hdmatx, hdma_usart1_tx);
   }
   else if (huart->Instance == USART2)
   {
     __HAL_RCC_USART2_CLK_ENABLE();
     __HAL_RCC_GPIOD_CLK_ENABLE();
+    __HAL_RCC_DMA1_CLK_ENABLE();
 
-    GPIO_InitStruct.Pin = DEBUG_UART_TX_Pin | DEBUG_UART_RX_Pin;
+    GPIO_InitStruct.Pin = TACTILE_LEFT_TX_Pin | TACTILE_LEFT_RX_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
     GPIO_InitStruct.Alternate = GPIO_AF7_USART2;
     HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+
+    hdma_usart2_rx.Instance = DMA1_Stream3;
+    hdma_usart2_rx.Init.Request = DMA_REQUEST_USART2_RX;
+    hdma_usart2_rx.Init.Direction = DMA_PERIPH_TO_MEMORY;
+    hdma_usart2_rx.Init.PeriphInc = DMA_PINC_DISABLE;
+    hdma_usart2_rx.Init.MemInc = DMA_MINC_ENABLE;
+    hdma_usart2_rx.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
+    hdma_usart2_rx.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
+    hdma_usart2_rx.Init.Mode = DMA_NORMAL;
+    hdma_usart2_rx.Init.Priority = DMA_PRIORITY_HIGH;
+    hdma_usart2_rx.Init.FIFOMode = DMA_FIFOMODE_DISABLE;
+    if (HAL_DMA_Init(&hdma_usart2_rx) != HAL_OK)
+    {
+      Error_Handler();
+    }
+    __HAL_LINKDMA(huart, hdmarx, hdma_usart2_rx);
+  }
+  else if (huart->Instance == USART10)
+  {
+    __HAL_RCC_USART10_CLK_ENABLE();
+    __HAL_RCC_GPIOE_CLK_ENABLE();
+
+    GPIO_InitStruct.Pin = RS485_DEBUG_RX_Pin;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+    GPIO_InitStruct.Alternate = GPIO_AF4_USART10;
+    HAL_GPIO_Init(RS485_DEBUG_RX_GPIO_Port, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = RS485_DEBUG_TX_Pin;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+    GPIO_InitStruct.Alternate = GPIO_AF11_USART10;
+    HAL_GPIO_Init(RS485_DEBUG_TX_GPIO_Port, &GPIO_InitStruct);
   }
 }
 

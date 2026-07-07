@@ -104,8 +104,8 @@ __weak void MCboot( MCI_Handle_t* pMCIList[NBR_OF_MOTORS] )
     FOC_Init();
 
     /*
-     * USART1当前让给调试控制台使用，暂不启动Motor Pilot/ASPEP。
-     * 需要恢复Motor Pilot时，应先把调试串口迁回其他USART。
+     * USART1 已用于右侧触觉传感器，当前不启动 Motor Pilot/ASPEP。
+     * 恢复 Motor Pilot 时需要切换到独立通信口，不能复用触觉串口。
      */
     /* ASPEP_start(&aspepOverUartA); */
     /* USER CODE BEGIN MCboot 1 */
