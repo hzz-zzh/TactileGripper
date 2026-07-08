@@ -27,6 +27,7 @@
 #include "parameters_conversion.h"
 #include "mcp_config.h"
 #include "motorcontrol.h"
+#include "tactile_service.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -229,6 +230,7 @@ void USART1_IRQHandler(void)
 
 void USART2_IRQHandler(void)
 {
+  TactileService_USART2IdleIRQHandler();
   HAL_UART_IRQHandler(&huart2);
 }
 

@@ -68,6 +68,9 @@ void Error_Handler(void);
 /* 触觉串口采集方式：当前保持非 DMA，避免把已验证的调试链路切回 DMA。 */
 #define TACTILE_UART_DMA_ENABLE    0U
 
+/* USART2 触觉传感器使用 DMA 循环接收 + IDLE 中断 + 环形缓冲解析，USART1 仍保持当前调试路径。 */
+#define TACTILE_USART2_RING_DMA_ENABLE 1U
+
 /* Motor power stage: TIM1 complementary PWM. */
 #define M1_PWM_UH_Pin              GPIO_PIN_9
 #define M1_PWM_UH_GPIO_Port        GPIOE

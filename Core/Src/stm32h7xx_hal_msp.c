@@ -193,6 +193,8 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart)
 #if TACTILE_UART_DMA_ENABLE
   extern DMA_HandleTypeDef hdma_usart1_rx;
   extern DMA_HandleTypeDef hdma_usart1_tx;
+#endif
+#if TACTILE_UART_DMA_ENABLE || TACTILE_USART2_RING_DMA_ENABLE
   extern DMA_HandleTypeDef hdma_usart2_rx;
 #endif
 
@@ -200,7 +202,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart)
   {
     __HAL_RCC_USART1_CLK_ENABLE();
     __HAL_RCC_GPIOA_CLK_ENABLE();
-#if TACTILE_UART_DMA_ENABLE
+#if TACTILE_UART_DMA_ENABLE || TACTILE_USART2_RING_DMA_ENABLE
     __HAL_RCC_DMA1_CLK_ENABLE();
 #endif
 
@@ -270,7 +272,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart)
     GPIO_InitStruct.Pull = GPIO_PULLUP;
     HAL_GPIO_Init(TACTILE_UART_RX_GPIO_Port, &GPIO_InitStruct);
 
-#if TACTILE_UART_DMA_ENABLE
+#if TACTILE_UART_DMA_ENABLE || TACTILE_USART2_RING_DMA_ENABLE
     hdma_usart2_rx.Instance = DMA1_Stream3;
     hdma_usart2_rx.Init.Request = DMA_REQUEST_USART2_RX;
     hdma_usart2_rx.Init.Direction = DMA_PERIPH_TO_MEMORY;
@@ -278,7 +280,11 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart)
     hdma_usart2_rx.Init.MemInc = DMA_MINC_ENABLE;
     hdma_usart2_rx.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
     hdma_usart2_rx.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
+#if TACTILE_USART2_RING_DMA_ENABLE
+    hdma_usart2_rx.Init.Mode = DMA_CIRCULAR;
+#else
     hdma_usart2_rx.Init.Mode = DMA_NORMAL;
+#endif
     hdma_usart2_rx.Init.Priority = DMA_PRIORITY_HIGH;
     hdma_usart2_rx.Init.FIFOMode = DMA_FIFOMODE_DISABLE;
     if (HAL_DMA_Init(&hdma_usart2_rx) != HAL_OK)
