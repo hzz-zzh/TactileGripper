@@ -88,6 +88,24 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef *hadc)
   }
 }
 
+void HAL_FDCAN_MspInit(FDCAN_HandleTypeDef *hfdcan)
+{
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+  if (hfdcan->Instance == FDCAN1)
+  {
+    __HAL_RCC_FDCAN_CLK_ENABLE();
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+
+    GPIO_InitStruct.Pin = GRIPPER_CAN_RX_Pin | GRIPPER_CAN_TX_Pin;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+    GPIO_InitStruct.Alternate = GPIO_AF9_FDCAN1;
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+  }
+}
+
 void HAL_SPI_MspInit(SPI_HandleTypeDef *hspi)
 {
   GPIO_InitTypeDef GPIO_InitStruct = {0};

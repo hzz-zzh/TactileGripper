@@ -116,6 +116,12 @@ void Error_Handler(void);
 #define STATUS_LED_DATA_Pin        GPIO_PIN_12
 #define STATUS_LED_DATA_GPIO_Port  GPIOC
 
+/* CAN2.0B communication on FDCAN1. */
+#define GRIPPER_CAN_RX_Pin         GPIO_PIN_8
+#define GRIPPER_CAN_RX_GPIO_Port   GPIOB
+#define GRIPPER_CAN_TX_Pin         GPIO_PIN_9
+#define GRIPPER_CAN_TX_GPIO_Port   GPIOB
+
 /* MCSDK compatibility: low sides are driven by TIM1 complementary outputs. */
 #define M1_PWM_EN_U_Pin            GPIO_PIN_0
 #define M1_PWM_EN_U_GPIO_Port      GPIOE

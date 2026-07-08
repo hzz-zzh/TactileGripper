@@ -210,6 +210,17 @@ bool GripperController_ClearFaults(GripperController_t *controller,
   return true;
 }
 
+void GripperController_LatchExternalFault(GripperController_t *controller,
+                                          uint32_t fault)
+{
+  if (controller == NULL)
+  {
+    return;
+  }
+
+  GripperController_LatchFault(controller, fault);
+}
+
 GripperControllerOutput_t GripperController_Update(
   GripperController_t *controller,
   const GripperControllerFeedback_t *feedback)

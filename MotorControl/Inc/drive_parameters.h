@@ -71,8 +71,8 @@
 #define TFDIFFERENTIAL_TERM_ENABLING        DISABLE
 
 /* 比例项负责快速抵抗负载扰动，积分项保持较慢，避免减速机构下积累后产生反向过冲。 */
-#define PID_SPEED_KP_DEFAULT                9000/(SPEED_UNIT/10)
-#define PID_SPEED_KI_DEFAULT                500/(SPEED_UNIT/10)
+#define PID_SPEED_KP_DEFAULT                12000/(SPEED_UNIT/10)
+#define PID_SPEED_KI_DEFAULT                200/(SPEED_UNIT/10)
 #define PID_SPEED_KD_DEFAULT                0/(SPEED_UNIT/10) /* Workbench compute the gain for 01Hz unit*/
 
 /* Speed control loop */
