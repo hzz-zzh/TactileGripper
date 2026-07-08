@@ -12,17 +12,20 @@
 #include <stdio.h>
 #include <string.h>
 
-#define TACTILE_SERVICE_SAMPLE_RATE_HZ       50U
+#define TACTILE_SERVICE_SAMPLE_RATE_HZ       40U
 #define TACTILE_SERVICE_PERIOD_MS            (1000U / TACTILE_SERVICE_SAMPLE_RATE_HZ)
-#define TACTILE_SERVICE_UNIT_TIMEOUT_MS      10U
+#define TACTILE_SERVICE_UNIT_TIMEOUT_MS      8U
+#define TACTILE_SERVICE_INTER_UNIT_GAP_MS    2U
+#define TACTILE_SERVICE_RETRY_DELAY_MS       1U
+#define TACTILE_SERVICE_MAX_READ_ATTEMPTS    2U
 #define TACTILE_SERVICE_RX_BUFFER_LENGTH     128U
-#define TACTILE_SERVICE_DEBUG_PRINT_MS       100U
+#define TACTILE_SERVICE_DEBUG_PRINT_MS       250U
 #define TACTILE_SERVICE_FPS_PRINT_MS         1000U
 #define TACTILE_SERVICE_ACQ_STACK_WORDS      384U
 #define TACTILE_SERVICE_LOG_STACK_WORDS      768U
 #define TACTILE_USART1_DMA_RX_ADDRESS        0x2404FE00UL
 #define TACTILE_USART2_DMA_RX_ADDRESS        0x2404FF00UL
-#if TACTILE_SENSOR_ONLY_MODE
+#if !TACTILE_UART_DMA_ENABLE
 #define TACTILE_SERVICE_USE_DMA              false
 #define TACTILE_SERVICE_BOOT_MODE            "no_dma"
 #else
@@ -50,6 +53,7 @@ typedef struct
   TactileUartTransport_t transport;
   uint8_t *rx_buffer;
   osThreadId_t task_handle;
+  uint32_t start_delay_ms;
   bool use_dma;
   bool print_debug;
 } TactileSensorContext_t;
@@ -57,7 +61,7 @@ typedef struct
 extern UART_HandleTypeDef huart1;
 extern UART_HandleTypeDef huart2;
 
-#if TACTILE_SENSOR_ONLY_MODE
+#if !TACTILE_UART_DMA_ENABLE
 /* 非 DMA 调试时使用普通静态缓冲区，避免绝对地址段影响问题定位。 */
 static uint8_t tactileUsart1RxBuffer[TACTILE_SERVICE_RX_BUFFER_LENGTH];
 static uint8_t tactileUsart2RxBuffer[TACTILE_SERVICE_RX_BUFFER_LENGTH];
@@ -95,6 +99,7 @@ static TactileSensorContext_t sensorContexts[TACTILE_SENSOR_COUNT] = {
     .huart = &huart1,
     .rx_buffer = tactileUsart1RxBuffer,
     .task_handle = NULL,
+    .start_delay_ms = 0U,
     .use_dma = TACTILE_SERVICE_USE_DMA,
     .print_debug = false
   },
@@ -104,6 +109,7 @@ static TactileSensorContext_t sensorContexts[TACTILE_SENSOR_COUNT] = {
     .huart = &huart2,
     .rx_buffer = tactileUsart2RxBuffer,
     .task_handle = NULL,
+    .start_delay_ms = TACTILE_SERVICE_PERIOD_MS / 2U,
     .use_dma = TACTILE_SERVICE_USE_DMA,
     .print_debug = true
   }
@@ -242,7 +248,8 @@ static bool TactileService_ReadUnit(TactileSensorContext_t *context,
   uint8_t sensorIndex;
   TactileProtocolResult_t protocolResult = TACTILE_PROTOCOL_BAD_LENGTH;
   TactileUnitData_t decoded;
-  bool transportOk;
+  bool transportOk = false;
+  uint8_t attempt;
 
   if ((context == NULL) || (unitIndex >= TACTILE_UNIT_COUNT))
   {
@@ -253,58 +260,73 @@ static bool TactileService_ReadUnit(TactileSensorContext_t *context,
   address = TactileService_UnitAddress(unitIndex);
   TactileProtocol_BuildReadCommand(address, command);
 
-  if (context->use_dma)
+  for (attempt = 0U; attempt < TACTILE_SERVICE_MAX_READ_ATTEMPTS; attempt++)
   {
-    transportOk = TactileUartTransport_WriteRead(
-      &context->transport,
-      command, sizeof(command),
-      context->rx_buffer,
-      TACTILE_SERVICE_RX_BUFFER_LENGTH,
-      TACTILE_FRAME_LENGTH,
-      &rxLength,
-      TACTILE_SERVICE_UNIT_TIMEOUT_MS);
-  }
-  else
-  {
-    transportOk = TactileUartTransport_WriteReadPolling(
-      &context->transport,
-      command, sizeof(command),
-      context->rx_buffer,
-      TACTILE_SERVICE_RX_BUFFER_LENGTH,
-      TACTILE_FRAME_LENGTH,
-      &rxLength,
-      TACTILE_SERVICE_UNIT_TIMEOUT_MS);
-  }
+    rxLength = 0U;
+    protocolResult = TACTILE_PROTOCOL_BAD_LENGTH;
 
-  if (transportOk)
-  {
-    taskENTER_CRITICAL();
-    decoded = serviceSnapshot.sensor[sensorIndex].unit[unitIndex];
-    taskEXIT_CRITICAL();
-
-    protocolResult = TactileProtocol_DecodeFrame(address,
-                                                context->rx_buffer,
-                                                rxLength,
-                                                &decoded);
-    if (protocolResult == TACTILE_PROTOCOL_OK)
+    if (context->use_dma)
     {
-      decoded.address = address;
-      decoded.sensor_index = sensorIndex;
-      decoded.unit_index = unitIndex;
-      decoded.timestamp_ms = HAL_GetTick();
-      decoded.valid = true;
+      transportOk = TactileUartTransport_WriteRead(
+        &context->transport,
+        command, sizeof(command),
+        context->rx_buffer,
+        TACTILE_SERVICE_RX_BUFFER_LENGTH,
+        TACTILE_FRAME_LENGTH,
+        &rxLength,
+        TACTILE_SERVICE_UNIT_TIMEOUT_MS);
+    }
+    else
+    {
+      transportOk = TactileUartTransport_WriteReadPolling(
+        &context->transport,
+        command, sizeof(command),
+        context->rx_buffer,
+        TACTILE_SERVICE_RX_BUFFER_LENGTH,
+        TACTILE_FRAME_LENGTH,
+        &rxLength,
+        TACTILE_SERVICE_UNIT_TIMEOUT_MS);
+    }
 
+    if (transportOk)
+    {
       taskENTER_CRITICAL();
-      serviceSnapshot.sensor[sensorIndex].unit[unitIndex] = decoded;
-      fpsWindowCounter[sensorIndex][unitIndex]++;
+      decoded = serviceSnapshot.sensor[sensorIndex].unit[unitIndex];
       taskEXIT_CRITICAL();
 
-      TactileService_UpdateRuntimeStat(context, unitIndex, protocolResult);
-      return true;
+      protocolResult = TactileProtocol_DecodeFrame(address,
+                                                  context->rx_buffer,
+                                                  rxLength,
+                                                  &decoded);
+      if (protocolResult == TACTILE_PROTOCOL_OK)
+      {
+        decoded.address = address;
+        decoded.sensor_index = sensorIndex;
+        decoded.unit_index = unitIndex;
+        decoded.timestamp_ms = HAL_GetTick();
+        decoded.valid = true;
+
+        taskENTER_CRITICAL();
+        serviceSnapshot.sensor[sensorIndex].unit[unitIndex] = decoded;
+        fpsWindowCounter[sensorIndex][unitIndex]++;
+        taskEXIT_CRITICAL();
+
+        TactileService_UpdateRuntimeStat(context, unitIndex, protocolResult);
+        return true;
+      }
+    }
+
+    TactileService_UpdateRuntimeStat(context, unitIndex, protocolResult);
+    if ((attempt + 1U) < TACTILE_SERVICE_MAX_READ_ATTEMPTS)
+    {
+      /*
+       * 失败后给传感器和 UART 状态机留一个很短的恢复间隔，再重发同一地址。
+       * 40Hz 周期有足够余量，优先保证本周期拿到有效帧。
+       */
+      (void)osDelay(TactileService_MsToTicks(TACTILE_SERVICE_RETRY_DELAY_MS));
     }
   }
 
-  TactileService_UpdateRuntimeStat(context, unitIndex, protocolResult);
   TactileService_RecordError(context, unitIndex, transportOk, protocolResult);
   return false;
 }
@@ -515,9 +537,11 @@ static void TactileService_PrintFrameRate(void)
 static void TactileService_Task(void *argument)
 {
   TactileSensorContext_t *context = (TactileSensorContext_t *)argument;
-  uint32_t nextTick = osKernelGetTickCount();
+  uint32_t nextTick;
   const uint32_t periodTicks =
     TactileService_MsToTicks(TACTILE_SERVICE_PERIOD_MS);
+  const uint32_t interUnitGapTicks =
+    TactileService_MsToTicks(TACTILE_SERVICE_INTER_UNIT_GAP_MS);
   uint32_t lastSummaryMs = HAL_GetTick();
   uint32_t lastFpsMs = HAL_GetTick();
   uint32_t nowMs;
@@ -531,16 +555,22 @@ static void TactileService_Task(void *argument)
   }
 
   TactileUartTransport_Init(&context->transport, context->huart);
+  if (context->start_delay_ms != 0U)
+  {
+    (void)osDelay(TactileService_MsToTicks(context->start_delay_ms));
+  }
+  nextTick = osKernelGetTickCount();
 
   for (;;)
   {
     if (tactileServiceEnabled)
     {
       /*
-       * 每个串口独立以 50Hz 轮询同一个传感器的上下两部分。
-       * 上层只消费统一快照，不需要关心数据来自 USART1 还是 USART2。
+       * 每个串口以 40Hz 轮询同一个传感器的上下两部分。
+       * 上下半区之间留出短间隔，避免连续命令让传感器响应或 UART 状态残留互相影响。
        */
       (void)TactileService_ReadUnit(context, TACTILE_UNIT_UPPER);
+      (void)osDelay(interUnitGapTicks);
       (void)TactileService_ReadUnit(context, TACTILE_UNIT_LOWER);
       TactileService_PublishSnapshot();
     }
@@ -567,7 +597,7 @@ static void TactileService_Task(void *argument)
 
 void TactileService_CreateTask(void)
 {
-  char line[96];
+  char line[160];
   const osThreadAttr_t usart1TaskAttr = {
     .name = "touchU1",
     .cb_mem = &tactileUsart1TaskControlBlock,
@@ -613,9 +643,12 @@ void TactileService_CreateTask(void)
   else
   {
     (void)snprintf(line, sizeof(line),
-                   "touchboot: ok,u1=%s,u2=%s,u1stk=%lu,u2stk=%lu,heap=%lu\r\n",
+                   "touchboot: ok,u1=%s,u2=%s,rate=%u,gap=%u,retry=%u,u1stk=%lu,u2stk=%lu,heap=%lu\r\n",
                    TACTILE_SERVICE_BOOT_MODE,
                    TACTILE_SERVICE_BOOT_MODE,
+                   TACTILE_SERVICE_SAMPLE_RATE_HZ,
+                   TACTILE_SERVICE_INTER_UNIT_GAP_MS,
+                   TACTILE_SERVICE_MAX_READ_ATTEMPTS,
                    (unsigned long)sizeof(tactileUsart1TaskStack),
                    (unsigned long)sizeof(tactileUsart2TaskStack),
                    (unsigned long)xPortGetFreeHeapSize());

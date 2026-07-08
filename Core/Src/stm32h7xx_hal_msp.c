@@ -190,7 +190,7 @@ void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim)
 void HAL_UART_MspInit(UART_HandleTypeDef *huart)
 {
   GPIO_InitTypeDef GPIO_InitStruct = {0};
-#if !TACTILE_SENSOR_ONLY_MODE
+#if TACTILE_UART_DMA_ENABLE
   extern DMA_HandleTypeDef hdma_usart1_rx;
   extern DMA_HandleTypeDef hdma_usart1_tx;
   extern DMA_HandleTypeDef hdma_usart2_rx;
@@ -200,7 +200,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart)
   {
     __HAL_RCC_USART1_CLK_ENABLE();
     __HAL_RCC_GPIOA_CLK_ENABLE();
-#if !TACTILE_SENSOR_ONLY_MODE
+#if TACTILE_UART_DMA_ENABLE
     __HAL_RCC_DMA1_CLK_ENABLE();
 #endif
 
@@ -216,7 +216,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart)
     GPIO_InitStruct.Pull = GPIO_PULLUP;
     HAL_GPIO_Init(TACTILE1_UART_RX_GPIO_Port, &GPIO_InitStruct);
 
-#if !TACTILE_SENSOR_ONLY_MODE
+#if TACTILE_UART_DMA_ENABLE
     hdma_usart1_rx.Instance = DMA1_Stream0;
     hdma_usart1_rx.Init.Request = DMA_REQUEST_USART1_RX;
     hdma_usart1_rx.Init.Direction = DMA_PERIPH_TO_MEMORY;
@@ -254,7 +254,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart)
   {
     __HAL_RCC_USART2_CLK_ENABLE();
     __HAL_RCC_GPIOD_CLK_ENABLE();
-#if !TACTILE_SENSOR_ONLY_MODE
+#if TACTILE_UART_DMA_ENABLE
     __HAL_RCC_DMA1_CLK_ENABLE();
 #endif
 
@@ -270,7 +270,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart)
     GPIO_InitStruct.Pull = GPIO_PULLUP;
     HAL_GPIO_Init(TACTILE_UART_RX_GPIO_Port, &GPIO_InitStruct);
 
-#if !TACTILE_SENSOR_ONLY_MODE
+#if TACTILE_UART_DMA_ENABLE
     hdma_usart2_rx.Instance = DMA1_Stream3;
     hdma_usart2_rx.Init.Request = DMA_REQUEST_USART2_RX;
     hdma_usart2_rx.Init.Direction = DMA_PERIPH_TO_MEMORY;

@@ -62,8 +62,11 @@ void Error_Handler(void);
 
 /* USER CODE BEGIN Private defines */
 
-/* 触觉传感器独立调试模式：只启动触觉采集任务和 RS485 调试输出。 */
-#define TACTILE_SENSOR_ONLY_MODE   1U
+/* 触觉传感器独立调试模式：置 1 时只启动触觉采集任务和 RS485 调试输出。 */
+#define TACTILE_SENSOR_ONLY_MODE   0U
+
+/* 触觉串口采集方式：当前保持非 DMA，避免把已验证的调试链路切回 DMA。 */
+#define TACTILE_UART_DMA_ENABLE    0U
 
 /* Motor power stage: TIM1 complementary PWM. */
 #define M1_PWM_UH_Pin              GPIO_PIN_9

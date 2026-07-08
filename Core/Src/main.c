@@ -693,12 +693,16 @@ static void MX_NVIC_Init(void)
   HAL_NVIC_SetPriority(FDCAN1_IT0_IRQn, 6, 0);
   HAL_NVIC_EnableIRQ(FDCAN1_IT0_IRQn);
 #endif
+#if TACTILE_UART_DMA_ENABLE
   HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 7, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream0_IRQn);
+#endif
   HAL_NVIC_SetPriority(DMA1_Stream2_IRQn, 7, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream2_IRQn);
+#if TACTILE_UART_DMA_ENABLE
   HAL_NVIC_SetPriority(DMA1_Stream3_IRQn, 7, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream3_IRQn);
+#endif
   HAL_NVIC_SetPriority(SPI3_IRQn, 7, 0);
   HAL_NVIC_EnableIRQ(SPI3_IRQn);
 #endif
