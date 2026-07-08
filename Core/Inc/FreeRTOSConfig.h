@@ -69,7 +69,8 @@ extern uint32_t SystemCoreClock;
 #define configUSE_SB_COMPLETED_CALLBACK          ( 0 )
 #define configUSE_MINI_LIST_ITEM                ( 1 )
 #define configMINIMAL_STACK_SIZE                 ((uint16_t)128)
-#define configTOTAL_HEAP_SIZE                    ((size_t)15360)
+/* STM32H723VGH6 的 AXI SRAM 余量足够，动态 heap 留给任务、队列和后续力控模块。 */
+#define configTOTAL_HEAP_SIZE                    ((size_t)(48U * 1024U))
 #define configMAX_TASK_NAME_LEN                  ( 16 )
 #define configHEAP_CLEAR_MEMORY_ON_FREE          0
 #define configUSE_TRACE_FACILITY                 1

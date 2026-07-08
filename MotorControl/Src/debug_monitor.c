@@ -20,10 +20,11 @@
 #define DEBUG_HOMING_PRINT_MS  100U
 #define DEBUG_HOMING_FAST_STALL_MS 200U
 #define DEBUG_HOMING_FAST_PRINT_MS 20U
-#define DEBUG_TX_TIMEOUT_MS    2U
+#define DEBUG_HOMING_PRINT_ENABLE 0U
+#define DEBUG_TX_TIMEOUT_MS    10U
 #define ADC_CAL_SAMPLES        2048U
 
-extern UART_HandleTypeDef huart1;
+extern UART_HandleTypeDef huart10;
 extern ADC_HandleTypeDef hadc1;
 extern ADC_HandleTypeDef hadc2;
 extern TIM_HandleTypeDef htim1;
@@ -259,7 +260,7 @@ void DebugMonitor_RunPwmInspection(uint32_t reset_flags)
   /* 每次上电只接受一次大写P，避免串口噪声导致重复驱动。 */
   for (;;)
   {
-    if ((HAL_UART_Receive(&huart1, &command, 1U, 100U) == HAL_OK) &&
+    if ((HAL_UART_Receive(&huart10, &command, 1U, 100U) == HAL_OK) &&
         (command == (uint8_t)'P'))
     {
       break;
@@ -519,7 +520,7 @@ void DebugMonitor_RunPwmVectorInspection(uint32_t reset_flags)
     DebugMonitor_Write(line);
     for (;;)
     {
-      if ((HAL_UART_Receive(&huart1, &command, 1U, 100U) == HAL_OK) &&
+      if ((HAL_UART_Receive(&huart10, &command, 1U, 100U) == HAL_OK) &&
           (command == (uint8_t)'P')) { break; }
     }
 
@@ -624,7 +625,7 @@ void DebugMonitor_RunPwmBaselineVectorInspection(uint32_t reset_flags)
     DebugMonitor_Write(line);
     for (;;)
     {
-      if ((HAL_UART_Receive(&huart1, &command, 1U, 100U) == HAL_OK) &&
+      if ((HAL_UART_Receive(&huart10, &command, 1U, 100U) == HAL_OK) &&
           (command == (uint8_t)'P')) { break; }
     }
 
@@ -905,7 +906,8 @@ static void DebugMonitor_Task(void *argument)
 
     if (homingPrintActive)
     {
-      if (DebugMonitor_ShouldPrintHoming(&gripperStatus,
+      if ((DEBUG_HOMING_PRINT_ENABLE != 0U) &&
+          DebugMonitor_ShouldPrintHoming(&gripperStatus,
                                          &lastHomingPrintState,
                                          &lastHomingPrintTick))
       {
@@ -1010,7 +1012,7 @@ static void DebugMonitor_Task(void *argument)
 void DebugMonitor_CreateTask(void)
 {
   const osThreadAttr_t attributes = {
-    .name = "debugUart2",
+    .name = "debug485",
     .stack_size = 512U * 4U,
     .priority = osPriorityLow
   };

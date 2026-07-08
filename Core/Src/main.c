@@ -33,6 +33,7 @@
 #include "status_indicator.h"
 #include "debug_monitor.h"
 #include "debug_uart_transport.h"
+#include "tactile_service.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -61,8 +62,10 @@ SPI_HandleTypeDef hspi3;
 TIM_HandleTypeDef htim1;
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
+UART_HandleTypeDef huart10;
 DMA_HandleTypeDef hdma_usart1_rx;
 DMA_HandleTypeDef hdma_usart1_tx;
+DMA_HandleTypeDef hdma_usart2_rx;
 DMA_HandleTypeDef hdma_spi3_tx;
 
 /* Definitions for defaultTask */
@@ -88,6 +91,7 @@ static void MX_SPI3_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_USART2_UART_Init(void);
+static void MX_USART10_UART_Init(void);
 static void MX_NVIC_Init(void);
 static void PeriphCommonClock_Config(void);
 void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
@@ -138,6 +142,7 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+#if !TACTILE_SENSOR_ONLY_MODE
   MX_DMA_Init();
   MX_ADC1_Init();
   MX_ADC2_Init();
@@ -147,9 +152,16 @@ int main(void)
   MX_SPI1_Init();
   MX_SPI3_Init();
   MX_TIM1_Init();
+#endif
   MX_USART1_UART_Init();
   MX_USART2_UART_Init();
-  DebugUartTransport_Init(&huart1);
+  MX_USART10_UART_Init();
+  DebugUartTransport_InitRs485(&huart10, RS485_DEBUG_DIR_GPIO_Port,
+                               RS485_DEBUG_DIR_Pin);
+#if TACTILE_SENSOR_ONLY_MODE
+  (void)bootResetFlags;
+  (void)DebugUartTransport_Write("mode: tactile_only,no_dma\r\n", 10U);
+#else
 #if PWM_INSPECTION_MODE
   DebugMonitor_RunPwmBaselineVectorInspection(bootResetFlags);
 #else
@@ -163,6 +175,7 @@ int main(void)
 #if CURRENT_ADC_CALIBRATION_MODE
   DebugMonitor_RunCurrentAdcCalibration();
 #endif
+#endif
   MX_NVIC_Init();
   /* USER CODE BEGIN 2 */
 
@@ -170,7 +183,8 @@ int main(void)
 
   /* Init scheduler */
   osKernelInitialize();
-  DebugUartTransport_Init(&huart1);
+  DebugUartTransport_InitRs485(&huart10, RS485_DEBUG_DIR_GPIO_Port,
+                               RS485_DEBUG_DIR_Pin);
 
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */
@@ -190,16 +204,23 @@ int main(void)
 
   /* Create the thread(s) */
   /* creation of defaultTask */
+#if !TACTILE_SENSOR_ONLY_MODE
   defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
+#endif
 
   /* USER CODE BEGIN RTOS_THREADS */
+#if !TACTILE_SENSOR_ONLY_MODE
   MotorControlService_CreateTasks();
   GripperService_CreateTask();
+#endif
+  TactileService_CreateTask();
+#if !TACTILE_SENSOR_ONLY_MODE
 #if GRIPPER_CAN_ENABLE
   CommunicationService_CreateTask();
 #endif
   StatusIndicator_CreateTask();
   DebugMonitor_CreateTask();
+#endif
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
@@ -286,7 +307,9 @@ static void PeriphCommonClock_Config(void)
 
   PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_ADC |
                                              RCC_PERIPHCLK_SPI1 |
-                                             RCC_PERIPHCLK_USART1;
+                                             RCC_PERIPHCLK_USART1 |
+                                             RCC_PERIPHCLK_USART2 |
+                                             RCC_PERIPHCLK_USART10;
 #if GRIPPER_CAN_ENABLE
   PeriphClkInitStruct.PeriphClockSelection |= RCC_PERIPHCLK_FDCAN;
 #endif
@@ -301,6 +324,8 @@ static void PeriphCommonClock_Config(void)
   PeriphClkInitStruct.AdcClockSelection = RCC_ADCCLKSOURCE_PLL2;
   PeriphClkInitStruct.Spi123ClockSelection = RCC_SPI123CLKSOURCE_PLL2;
   PeriphClkInitStruct.Usart16ClockSelection = RCC_USART16CLKSOURCE_D2PCLK2;
+  PeriphClkInitStruct.Usart234578ClockSelection =
+    RCC_USART234578CLKSOURCE_D2PCLK1;
 #if GRIPPER_CAN_ENABLE
   PeriphClkInitStruct.FdcanClockSelection = RCC_FDCANCLKSOURCE_PLL2;
 #endif
@@ -581,7 +606,7 @@ static void MX_TIM1_Init(void)
 static void MX_USART1_UART_Init(void)
 {
   huart1.Instance = USART1;
-  huart1.Init.BaudRate = 921600;
+  huart1.Init.BaudRate = 460800;
   huart1.Init.WordLength = UART_WORDLENGTH_8B;
   huart1.Init.StopBits = UART_STOPBITS_1;
   huart1.Init.Parity = UART_PARITY_NONE;
@@ -603,7 +628,7 @@ static void MX_USART1_UART_Init(void)
 static void MX_USART2_UART_Init(void)
 {
   huart2.Instance = USART2;
-  huart2.Init.BaudRate = 921600;
+  huart2.Init.BaudRate = 460800;
   huart2.Init.WordLength = UART_WORDLENGTH_8B;
   huart2.Init.StopBits = UART_STOPBITS_1;
   huart2.Init.Parity = UART_PARITY_NONE;
@@ -622,6 +647,28 @@ static void MX_USART2_UART_Init(void)
   (void)HAL_UARTEx_DisableFifoMode(&huart2);
 }
 
+static void MX_USART10_UART_Init(void)
+{
+  huart10.Instance = USART10;
+  huart10.Init.BaudRate = 460800;
+  huart10.Init.WordLength = UART_WORDLENGTH_8B;
+  huart10.Init.StopBits = UART_STOPBITS_1;
+  huart10.Init.Parity = UART_PARITY_NONE;
+  huart10.Init.Mode = UART_MODE_TX_RX;
+  huart10.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart10.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart10.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart10.Init.ClockPrescaler = UART_PRESCALER_DIV1;
+  huart10.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart10) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  (void)HAL_UARTEx_SetTxFifoThreshold(&huart10, UART_TXFIFO_THRESHOLD_1_8);
+  (void)HAL_UARTEx_SetRxFifoThreshold(&huart10, UART_RXFIFO_THRESHOLD_1_8);
+  (void)HAL_UARTEx_DisableFifoMode(&huart10);
+}
+
 static void MX_DMA_Init(void)
 {
   __HAL_RCC_DMA1_CLK_ENABLE();
@@ -629,22 +676,32 @@ static void MX_DMA_Init(void)
 
 static void MX_NVIC_Init(void)
 {
+#if !TACTILE_SENSOR_ONLY_MODE
   HAL_NVIC_SetPriority(TIM1_UP_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(TIM1_UP_IRQn);
   HAL_NVIC_SetPriority(ADC_IRQn, 2, 0);
   HAL_NVIC_EnableIRQ(ADC_IRQn);
+#endif
   HAL_NVIC_SetPriority(USART1_IRQn, 6, 0);
   HAL_NVIC_EnableIRQ(USART1_IRQn);
   HAL_NVIC_SetPriority(USART2_IRQn, 6, 0);
   HAL_NVIC_EnableIRQ(USART2_IRQn);
+  HAL_NVIC_SetPriority(USART10_IRQn, 6, 0);
+  HAL_NVIC_EnableIRQ(USART10_IRQn);
+#if !TACTILE_SENSOR_ONLY_MODE
 #if GRIPPER_CAN_ENABLE
   HAL_NVIC_SetPriority(FDCAN1_IT0_IRQn, 6, 0);
   HAL_NVIC_EnableIRQ(FDCAN1_IT0_IRQn);
 #endif
+  HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 7, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream0_IRQn);
   HAL_NVIC_SetPriority(DMA1_Stream2_IRQn, 7, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream2_IRQn);
+  HAL_NVIC_SetPriority(DMA1_Stream3_IRQn, 7, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream3_IRQn);
   HAL_NVIC_SetPriority(SPI3_IRQn, 7, 0);
   HAL_NVIC_EnableIRQ(SPI3_IRQn);
+#endif
 }
 
 /**
@@ -672,6 +729,14 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  HAL_GPIO_WritePin(RS485_DEBUG_DIR_GPIO_Port, RS485_DEBUG_DIR_Pin,
+                    GPIO_PIN_RESET);
+  GPIO_InitStruct.Pin = RS485_DEBUG_DIR_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(RS485_DEBUG_DIR_GPIO_Port, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 

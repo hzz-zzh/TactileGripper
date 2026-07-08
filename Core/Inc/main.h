@@ -62,6 +62,9 @@ void Error_Handler(void);
 
 /* USER CODE BEGIN Private defines */
 
+/* 触觉传感器独立调试模式：只启动触觉采集任务和 RS485 调试输出。 */
+#define TACTILE_SENSOR_ONLY_MODE   1U
+
 /* Motor power stage: TIM1 complementary PWM. */
 #define M1_PWM_UH_Pin              GPIO_PIN_9
 #define M1_PWM_UH_GPIO_Port        GPIOE
@@ -100,17 +103,33 @@ void Error_Handler(void);
 #define KTH7812_NSS_Pin            GPIO_PIN_15
 #define KTH7812_NSS_GPIO_Port      GPIOA
 
-/* USART1 pins. 当前调试控制台使用PA9/PA10，Motor Pilot/ASPEP暂时停用。 */
-#define MOTOR_PILOT_TX_Pin         GPIO_PIN_9
-#define MOTOR_PILOT_TX_GPIO_Port   GPIOA
-#define MOTOR_PILOT_RX_Pin         GPIO_PIN_10
-#define MOTOR_PILOT_RX_GPIO_Port   GPIOA
+/* 触觉传感器1串口：USART1，460800-8-N-1。 */
+#define TACTILE1_UART_TX_Pin       GPIO_PIN_9
+#define TACTILE1_UART_TX_GPIO_Port GPIOA
+#define TACTILE1_UART_RX_Pin       GPIO_PIN_10
+#define TACTILE1_UART_RX_GPIO_Port GPIOA
+#define MOTOR_PILOT_TX_Pin         TACTILE1_UART_TX_Pin
+#define MOTOR_PILOT_TX_GPIO_Port   TACTILE1_UART_TX_GPIO_Port
+#define MOTOR_PILOT_RX_Pin         TACTILE1_UART_RX_Pin
+#define MOTOR_PILOT_RX_GPIO_Port   TACTILE1_UART_RX_GPIO_Port
 
-/* USART2端子保留，当前不作为调试控制台。 */
-#define DEBUG_UART_TX_Pin          GPIO_PIN_5
-#define DEBUG_UART_TX_GPIO_Port    GPIOD
-#define DEBUG_UART_RX_Pin          GPIO_PIN_6
-#define DEBUG_UART_RX_GPIO_Port    GPIOD
+/* 触觉传感器2串口：USART2，460800-8-N-1。 */
+#define TACTILE_UART_TX_Pin        GPIO_PIN_5
+#define TACTILE_UART_TX_GPIO_Port  GPIOD
+#define TACTILE_UART_RX_Pin        GPIO_PIN_6
+#define TACTILE_UART_RX_GPIO_Port  GPIOD
+#define DEBUG_UART_TX_Pin          TACTILE_UART_TX_Pin
+#define DEBUG_UART_TX_GPIO_Port    TACTILE_UART_TX_GPIO_Port
+#define DEBUG_UART_RX_Pin          TACTILE_UART_RX_Pin
+#define DEBUG_UART_RX_GPIO_Port    TACTILE_UART_RX_GPIO_Port
+
+/* RS485 调试口：USART10，PC13 为收发方向控制，高电平发送。 */
+#define RS485_DEBUG_TX_Pin         GPIO_PIN_3
+#define RS485_DEBUG_TX_GPIO_Port   GPIOE
+#define RS485_DEBUG_RX_Pin         GPIO_PIN_2
+#define RS485_DEBUG_RX_GPIO_Port   GPIOE
+#define RS485_DEBUG_DIR_Pin        GPIO_PIN_13
+#define RS485_DEBUG_DIR_GPIO_Port  GPIOC
 
 /* WS2812E-1313 status indicator driven by SPI3 MOSI. */
 #define STATUS_LED_DATA_Pin        GPIO_PIN_12
