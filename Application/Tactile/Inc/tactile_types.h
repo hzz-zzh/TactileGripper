@@ -17,7 +17,7 @@ extern "C" {
 #define TACTILE_SENSOR_USART1         0U
 #define TACTILE_SENSOR_USART2         1U
 
-#define TACTILE_UPPER_ADDRESS         0x6DU
+#define TACTILE_UPPER_ADDRESS         0x37U
 #define TACTILE_LOWER_ADDRESS         0x36U
 
 #define TACTILE_MASK_UPPER            (1U << 0)
