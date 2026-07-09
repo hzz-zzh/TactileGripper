@@ -9,8 +9,8 @@
 #define GRIPPER_CAN_ENABLE             1U
 #endif
 
-#define GRIPPER_CAN_NODE_ID              1U
-#define GRIPPER_CAN_MASTER_NODE_ID       0U
+#define GRIPPER_CAN_NODE_ID              8U
+#define GRIPPER_CAN_MASTER_NODE_ID       8U
 #define GRIPPER_CAN_BROADCAST_NODE_ID    255U
 
 #define GRIPPER_CAN_STATUS_PERIOD_MS     20U
