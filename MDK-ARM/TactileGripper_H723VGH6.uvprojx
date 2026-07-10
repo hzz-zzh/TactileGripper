@@ -18,7 +18,7 @@
           <Vendor>STMicroelectronics</Vendor>
           <PackID>Keil.STM32H7xx_DFP.3.1.1</PackID>
           <PackURL>https://www.keil.com/pack/</PackURL>
-          <Cpu>IRAM(0x20000000-0x2001FFFF) IRAM2(0x24000100-0x2404FFFF) IROM(0x8000000-0x80FFFFF) CLOCK(12000000) FPU3(DFPU) CPUTYPE("Cortex-M7") ELITTLE TZ</Cpu>
+          <Cpu>IRAM(0x20000000-0x2001FFFF) IRAM2(0x24000400-0x2404FFFF) IROM(0x8000000-0x80FFFFF) CLOCK(12000000) FPU3(DFPU) CPUTYPE("Cortex-M7") ELITTLE TZ</Cpu>
           <FlashUtilSpec></FlashUtilSpec>
           <StartupFile></StartupFile>
           <FlashDriverDll></FlashDriverDll>
@@ -305,8 +305,8 @@
               </OCR_RVCT9>
               <OCR_RVCT10>
                 <Type>0</Type>
-                <StartAddress>0x24000100</StartAddress>
-                <Size>0x4ff00</Size>
+                <StartAddress>0x24000400</StartAddress>
+                <Size>0x4fc00</Size>
               </OCR_RVCT10>
             </OnChipMemories>
             <RvctStartVector></RvctStartVector>
@@ -339,7 +339,7 @@
               <MiscControls></MiscControls>
               <Define>USE_PWR_LDO_SUPPLY,USE_HAL_DRIVER,STM32H723xx,ARM_MATH_CM7</Define>
               <Undefine></Undefine>
-              <IncludePath>../Core/Inc;../MotorControl/Inc;../Application/Gripper/Inc;../Application/Communication/Inc;../Application/StatusIndicator/Inc;../Platform/Inc;../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/Any/Inc;../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/H7xx/Inc;../Drivers/CMSIS/DSP/Include;../Drivers/STM32H7xx_HAL_Driver/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy;../Middlewares/Third_Party/FreeRTOS/Source/include;../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2;../Middlewares/Third_Party/FreeRTOS/Source/portable/RVDS/ARM_CM4F;../Drivers/CMSIS/RTOS2/Include;../Drivers/CMSIS/Device/ST/STM32H7xx/Include;../Drivers/CMSIS/Include</IncludePath>
+              <IncludePath>../Core/Inc;../MotorControl/Inc;../Application/Gripper/Inc;../Application/Communication/Inc;../Application/StatusIndicator/Inc;../Application/TactileSensor/Inc;../Platform/Inc;../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/Any/Inc;../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/H7xx/Inc;../Drivers/CMSIS/DSP/Include;../Drivers/STM32H7xx_HAL_Driver/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy;../Middlewares/Third_Party/FreeRTOS/Source/include;../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2;../Middlewares/Third_Party/FreeRTOS/Source/portable/RVDS/ARM_CM4F;../Drivers/CMSIS/RTOS2/Include;../Drivers/CMSIS/Device/ST/STM32H7xx/Include;../Drivers/CMSIS/Include</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -357,7 +357,7 @@
               <MiscControls></MiscControls>
               <Define></Define>
               <Undefine></Undefine>
-              <IncludePath>../Core/Inc;../MotorControl/Inc;../Application/Gripper/Inc;../Application/Communication/Inc;../Application/StatusIndicator/Inc;../Platform/Inc;../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/Any/Inc;../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/H7xx/Inc;../Drivers/CMSIS/DSP/Include;../Drivers/STM32H7xx_HAL_Driver/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy;../Middlewares/Third_Party/FreeRTOS/Source/include;../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2;../Middlewares/Third_Party/FreeRTOS/Source/portable/RVDS/ARM_CM4F;../Drivers/CMSIS/RTOS2/Include;../Drivers/CMSIS/Device/ST/STM32H7xx/Include;../Drivers/CMSIS/Include</IncludePath>
+              <IncludePath>../Core/Inc;../MotorControl/Inc;../Application/Gripper/Inc;../Application/Communication/Inc;../Application/StatusIndicator/Inc;../Application/TactileSensor/Inc;../Platform/Inc;../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/Any/Inc;../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/H7xx/Inc;../Drivers/CMSIS/DSP/Include;../Drivers/STM32H7xx_HAL_Driver/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy;../Middlewares/Third_Party/FreeRTOS/Source/include;../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2;../Middlewares/Third_Party/FreeRTOS/Source/portable/RVDS/ARM_CM4F;../Drivers/CMSIS/RTOS2/Include;../Drivers/CMSIS/Device/ST/STM32H7xx/Include;../Drivers/CMSIS/Include</IncludePath>
             </VariousControls>
           </Aads>
           <LDads>
@@ -792,6 +792,16 @@
               <FileName>status_indicator.c</FileName>
               <FileType>1</FileType>
               <FilePath>../Application/StatusIndicator/Src/status_indicator.c</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>Application/TactileSensor</GroupName>
+          <Files>
+            <File>
+              <FileName>tactile_sensor.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Application/TactileSensor/Src/tactile_sensor.c</FilePath>
             </File>
           </Files>
         </Group>

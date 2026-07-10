@@ -192,6 +192,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart)
   GPIO_InitTypeDef GPIO_InitStruct = {0};
   extern DMA_HandleTypeDef hdma_usart1_rx;
   extern DMA_HandleTypeDef hdma_usart1_tx;
+  extern DMA_HandleTypeDef hdma_usart2_rx;
 
   if (huart->Instance == USART1)
   {
@@ -242,13 +243,59 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart)
   {
     __HAL_RCC_USART2_CLK_ENABLE();
     __HAL_RCC_GPIOD_CLK_ENABLE();
+    __HAL_RCC_DMA1_CLK_ENABLE();
 
-    GPIO_InitStruct.Pin = DEBUG_UART_TX_Pin | DEBUG_UART_RX_Pin;
+    GPIO_InitStruct.Pin = TACTILE_SENSOR_TX_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
     GPIO_InitStruct.Alternate = GPIO_AF7_USART2;
-    HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+    HAL_GPIO_Init(TACTILE_SENSOR_TX_GPIO_Port, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = TACTILE_SENSOR_RX_Pin;
+    /* UART空闲电平为高，RX上拉能避免传感器未驱动时的悬空噪声。 */
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+    HAL_GPIO_Init(TACTILE_SENSOR_RX_GPIO_Port, &GPIO_InitStruct);
+
+    hdma_usart2_rx.Instance = DMA1_Stream3;
+    hdma_usart2_rx.Init.Request = DMA_REQUEST_USART2_RX;
+    hdma_usart2_rx.Init.Direction = DMA_PERIPH_TO_MEMORY;
+    hdma_usart2_rx.Init.PeriphInc = DMA_PINC_DISABLE;
+    hdma_usart2_rx.Init.MemInc = DMA_MINC_ENABLE;
+    hdma_usart2_rx.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
+    hdma_usart2_rx.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
+    /* 循环DMA持续接收字节流，IDLE中断只负责通知当前写入位置。 */
+    hdma_usart2_rx.Init.Mode = DMA_CIRCULAR;
+    hdma_usart2_rx.Init.Priority = DMA_PRIORITY_HIGH;
+    hdma_usart2_rx.Init.FIFOMode = DMA_FIFOMODE_DISABLE;
+    if (HAL_DMA_Init(&hdma_usart2_rx) != HAL_OK)
+    {
+      Error_Handler();
+    }
+    __HAL_LINKDMA(huart, hdmarx, hdma_usart2_rx);
+  }
+  else if (huart->Instance == USART10)
+  {
+    __HAL_RCC_USART10_CLK_ENABLE();
+    __HAL_RCC_GPIOE_CLK_ENABLE();
+    __HAL_RCC_GPIOC_CLK_ENABLE();
+
+    GPIO_InitStruct.Pin = DEBUG_RS485_TX_Pin | DEBUG_RS485_RX_Pin;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+    /* H723上PE3/PE2这组USART10引脚使用AF11，AF4会导致485口没有TX波形。 */
+    GPIO_InitStruct.Alternate = GPIO_AF11_USART10;
+    HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = DEBUG_RS485_EN_Pin;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+    HAL_GPIO_Init(DEBUG_RS485_EN_GPIO_Port, &GPIO_InitStruct);
+    /* EN拉低表示接收态，发送时由debug_uart_transport临时拉高。 */
+    HAL_GPIO_WritePin(DEBUG_RS485_EN_GPIO_Port, DEBUG_RS485_EN_Pin,
+                      GPIO_PIN_RESET);
   }
 }
 

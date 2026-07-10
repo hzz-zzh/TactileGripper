@@ -100,17 +100,29 @@ void Error_Handler(void);
 #define KTH7812_NSS_Pin            GPIO_PIN_15
 #define KTH7812_NSS_GPIO_Port      GPIOA
 
-/* USART1 pins. 当前调试控制台使用PA9/PA10，Motor Pilot/ASPEP暂时停用。 */
+/* USART1只保留硬件初始化，调试和Motor Pilot/ASPEP功能暂时停用。 */
 #define MOTOR_PILOT_TX_Pin         GPIO_PIN_9
 #define MOTOR_PILOT_TX_GPIO_Port   GPIOA
 #define MOTOR_PILOT_RX_Pin         GPIO_PIN_10
 #define MOTOR_PILOT_RX_GPIO_Port   GPIOA
 
-/* USART2端子保留，当前不作为调试控制台。 */
+/* USART2连接地址0x36的触觉传感器。 */
 #define DEBUG_UART_TX_Pin          GPIO_PIN_5
 #define DEBUG_UART_TX_GPIO_Port    GPIOD
 #define DEBUG_UART_RX_Pin          GPIO_PIN_6
 #define DEBUG_UART_RX_GPIO_Port    GPIOD
+#define TACTILE_SENSOR_TX_Pin       DEBUG_UART_TX_Pin
+#define TACTILE_SENSOR_TX_GPIO_Port DEBUG_UART_TX_GPIO_Port
+#define TACTILE_SENSOR_RX_Pin       DEBUG_UART_RX_Pin
+#define TACTILE_SENSOR_RX_GPIO_Port DEBUG_UART_RX_GPIO_Port
+
+/* RS485调试口，和CAN端子通过跳线帽二选一。 */
+#define DEBUG_RS485_TX_Pin         GPIO_PIN_3
+#define DEBUG_RS485_TX_GPIO_Port   GPIOE
+#define DEBUG_RS485_RX_Pin         GPIO_PIN_2
+#define DEBUG_RS485_RX_GPIO_Port   GPIOE
+#define DEBUG_RS485_EN_Pin         GPIO_PIN_13
+#define DEBUG_RS485_EN_GPIO_Port   GPIOC
 
 /* WS2812E-1313 status indicator driven by SPI3 MOSI. */
 #define STATUS_LED_DATA_Pin        GPIO_PIN_12

@@ -133,7 +133,7 @@ static void MotorControlService_MediumTask(void *argument)
   {
     next += 1U;
     /*
-     * USART1当前用于调试控制台，ASPEP未启动，不能再轮询其DMA接收标志。
+     * USART1只保留硬件初始化，ASPEP未启动，不能轮询其DMA接收标志。
      * 恢复Motor Pilot时需要与mc_tasks.c中的ASPEP_start同步恢复。
      */
     MC_RunMotorControlTasks();

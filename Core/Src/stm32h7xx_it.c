@@ -27,6 +27,7 @@
 #include "parameters_conversion.h"
 #include "mcp_config.h"
 #include "motorcontrol.h"
+#include "tactile_sensor.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -64,8 +65,10 @@ extern TIM_HandleTypeDef htim6;
 extern FDCAN_HandleTypeDef hfdcan1;
 extern UART_HandleTypeDef huart1;
 extern UART_HandleTypeDef huart2;
+extern UART_HandleTypeDef huart10;
 extern SPI_HandleTypeDef hspi3;
 extern DMA_HandleTypeDef hdma_spi3_tx;
+extern DMA_HandleTypeDef hdma_usart2_rx;
 
 /* USER CODE BEGIN EV */
 
@@ -220,7 +223,6 @@ void TIM1_BRK_IRQHandler(void)
 
 void USART1_IRQHandler(void)
 {
-  /* USART1当前作为人类可读调试串口，接收命令走HAL单字节中断。 */
   HAL_UART_IRQHandler(&huart1);
 }
 
@@ -229,9 +231,19 @@ void USART2_IRQHandler(void)
   HAL_UART_IRQHandler(&huart2);
 }
 
+void USART10_IRQHandler(void)
+{
+  HAL_UART_IRQHandler(&huart10);
+}
+
 void FDCAN1_IT0_IRQHandler(void)
 {
   HAL_FDCAN_IRQHandler(&hfdcan1);
+}
+
+void DMA1_Stream3_IRQHandler(void)
+{
+  HAL_DMA_IRQHandler(&hdma_usart2_rx);
 }
 
 void DMA1_Stream2_IRQHandler(void)

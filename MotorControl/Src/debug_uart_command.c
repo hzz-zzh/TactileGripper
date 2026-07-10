@@ -1,4 +1,6 @@
 #include "debug_uart_command.h"
+#include "debug_uart_transport.h"
+#include "tactile_sensor.h"
 
 #define DEBUG_UART_COMMAND_BUFFER_SIZE      32U
 #define DEBUG_UART_COMMAND_IDLE_TIMEOUT_MS  50U
@@ -9,6 +11,18 @@ static uint8_t debugUartRxByte;
 static volatile uint16_t debugUartRxHead;
 static volatile uint16_t debugUartRxTail;
 static volatile uint8_t debugUartRxRing[DEBUG_UART_COMMAND_RX_RING_SIZE];
+
+static void DebugUartCommand_FlushHardwareRx(void)
+{
+  if (debugUartHandle == NULL)
+  {
+    return;
+  }
+
+  __HAL_UART_CLEAR_FLAG(debugUartHandle, UART_CLEAR_OREF | UART_CLEAR_NEF |
+                                         UART_CLEAR_FEF | UART_CLEAR_PEF);
+  __HAL_UART_SEND_REQ(debugUartHandle, UART_RXDATA_FLUSH_REQUEST);
+}
 
 static bool DebugUartCommand_IsSpace(char value)
 {
@@ -219,7 +233,7 @@ void DebugUartCommand_Init(UART_HandleTypeDef *huart)
 
   if (debugUartHandle != NULL)
   {
-    __HAL_UART_CLEAR_OREFLAG(debugUartHandle);
+    DebugUartCommand_FlushHardwareRx();
     (void)HAL_UART_Receive_IT(debugUartHandle, &debugUartRxByte, 1U);
   }
 }
@@ -293,7 +307,11 @@ void DebugUartCommand_RxCpltCallback(UART_HandleTypeDef *huart)
 {
   if ((debugUartHandle != NULL) && (huart == debugUartHandle))
   {
-    DebugUartCommand_PushByte(debugUartRxByte);
+    if (!DebugUartTransport_IsTxActive(huart))
+    {
+      /* 485调试口发送日志时可能回读到自身数据，避免把日志当命令解析。 */
+      DebugUartCommand_PushByte(debugUartRxByte);
+    }
     (void)HAL_UART_Receive_IT(debugUartHandle, &debugUartRxByte, 1U);
   }
 }
@@ -302,7 +320,7 @@ void DebugUartCommand_ErrorCallback(UART_HandleTypeDef *huart)
 {
   if ((debugUartHandle != NULL) && (huart == debugUartHandle))
   {
-    __HAL_UART_CLEAR_OREFLAG(debugUartHandle);
+    DebugUartCommand_FlushHardwareRx();
     (void)HAL_UART_Receive_IT(debugUartHandle, &debugUartRxByte, 1U);
   }
 }
@@ -315,4 +333,5 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
   DebugUartCommand_ErrorCallback(huart);
+  TactileSensor_ErrorCallback(huart);
 }
