@@ -106,7 +106,7 @@ void Error_Handler(void);
 #define MOTOR_PILOT_RX_Pin         GPIO_PIN_10
 #define MOTOR_PILOT_RX_GPIO_Port   GPIOA
 
-/* USART2连接地址0x36的触觉传感器。 */
+/* USART2轮询触觉传感器地址0x36和0x37。 */
 #define DEBUG_UART_TX_Pin          GPIO_PIN_5
 #define DEBUG_UART_TX_GPIO_Port    GPIOD
 #define DEBUG_UART_RX_Pin          GPIO_PIN_6
