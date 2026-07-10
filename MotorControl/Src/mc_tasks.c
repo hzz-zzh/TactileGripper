@@ -104,7 +104,7 @@ __weak void MCboot( MCI_Handle_t* pMCIList[NBR_OF_MOTORS] )
     FOC_Init();
 
     /*
-     * USART1当前只做硬件初始化，暂不启动Motor Pilot/ASPEP。
+     * USART1当前用于第一片触觉传感器，暂不启动Motor Pilot/ASPEP。
      * 调试信息已经迁移到USART10的RS485口。
      */
     /* ASPEP_start(&aspepOverUartA); */

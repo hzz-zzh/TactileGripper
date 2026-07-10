@@ -157,7 +157,7 @@ int main(void)
   DebugUartTransport_InitRs485(&huart10,
                                DEBUG_RS485_EN_GPIO_Port,
                                DEBUG_RS485_EN_Pin);
-  TactileSensor_Init(&huart2);
+  TactileSensor_Init(&huart1, &huart2);
 #if PWM_INSPECTION_MODE
   DebugMonitor_RunPwmBaselineVectorInspection(bootResetFlags);
 #else
@@ -600,14 +600,15 @@ static void MX_TIM1_Init(void)
 static void MX_USART1_UART_Init(void)
 {
   huart1.Instance = USART1;
-  huart1.Init.BaudRate = 921600;
+  huart1.Init.BaudRate = 460800;
   huart1.Init.WordLength = UART_WORDLENGTH_8B;
   huart1.Init.StopBits = UART_STOPBITS_1;
   huart1.Init.Parity = UART_PARITY_NONE;
   huart1.Init.Mode = UART_MODE_TX_RX;
   huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
   huart1.Init.OverSampling = UART_OVERSAMPLING_16;
-  huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  /* USART1触觉链路使用单点采样，避免多数采样产生连续NE。 */
+  huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_ENABLE;
   huart1.Init.ClockPrescaler = UART_PRESCALER_DIV1;
   huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
   if (HAL_UART_Init(&huart1) != HAL_OK)
@@ -685,6 +686,8 @@ static void MX_NVIC_Init(void)
   HAL_NVIC_SetPriority(FDCAN1_IT0_IRQn, 6, 0);
   HAL_NVIC_EnableIRQ(FDCAN1_IT0_IRQn);
 #endif
+  HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 7, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream0_IRQn);
   HAL_NVIC_SetPriority(DMA1_Stream3_IRQn, 7, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream3_IRQn);
   HAL_NVIC_SetPriority(DMA1_Stream2_IRQn, 7, 0);

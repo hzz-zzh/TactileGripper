@@ -200,12 +200,16 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart)
     __HAL_RCC_GPIOA_CLK_ENABLE();
     __HAL_RCC_DMA1_CLK_ENABLE();
 
-    GPIO_InitStruct.Pin = MOTOR_PILOT_TX_Pin | MOTOR_PILOT_RX_Pin;
+    GPIO_InitStruct.Pin = TACTILE_UART1_TX_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
     GPIO_InitStruct.Alternate = GPIO_AF7_USART1;
-    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+    HAL_GPIO_Init(TACTILE_UART1_TX_GPIO_Port, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = TACTILE_UART1_RX_Pin;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+    HAL_GPIO_Init(TACTILE_UART1_RX_GPIO_Port, &GPIO_InitStruct);
 
     hdma_usart1_rx.Instance = DMA1_Stream0;
     hdma_usart1_rx.Init.Request = DMA_REQUEST_USART1_RX;
@@ -214,8 +218,8 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart)
     hdma_usart1_rx.Init.MemInc = DMA_MINC_ENABLE;
     hdma_usart1_rx.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
     hdma_usart1_rx.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
-    hdma_usart1_rx.Init.Mode = DMA_NORMAL;
-    hdma_usart1_rx.Init.Priority = DMA_PRIORITY_LOW;
+    hdma_usart1_rx.Init.Mode = DMA_CIRCULAR;
+    hdma_usart1_rx.Init.Priority = DMA_PRIORITY_HIGH;
     hdma_usart1_rx.Init.FIFOMode = DMA_FIFOMODE_DISABLE;
     if (HAL_DMA_Init(&hdma_usart1_rx) != HAL_OK)
     {
@@ -245,17 +249,17 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart)
     __HAL_RCC_GPIOD_CLK_ENABLE();
     __HAL_RCC_DMA1_CLK_ENABLE();
 
-    GPIO_InitStruct.Pin = TACTILE_SENSOR_TX_Pin;
+    GPIO_InitStruct.Pin = TACTILE_UART2_TX_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
     GPIO_InitStruct.Alternate = GPIO_AF7_USART2;
-    HAL_GPIO_Init(TACTILE_SENSOR_TX_GPIO_Port, &GPIO_InitStruct);
+    HAL_GPIO_Init(TACTILE_UART2_TX_GPIO_Port, &GPIO_InitStruct);
 
-    GPIO_InitStruct.Pin = TACTILE_SENSOR_RX_Pin;
+    GPIO_InitStruct.Pin = TACTILE_UART2_RX_Pin;
     /* UART空闲电平为高，RX上拉能避免传感器未驱动时的悬空噪声。 */
     GPIO_InitStruct.Pull = GPIO_PULLUP;
-    HAL_GPIO_Init(TACTILE_SENSOR_RX_GPIO_Port, &GPIO_InitStruct);
+    HAL_GPIO_Init(TACTILE_UART2_RX_GPIO_Port, &GPIO_InitStruct);
 
     hdma_usart2_rx.Instance = DMA1_Stream3;
     hdma_usart2_rx.Init.Request = DMA_REQUEST_USART2_RX;

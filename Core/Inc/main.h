@@ -100,21 +100,25 @@ void Error_Handler(void);
 #define KTH7812_NSS_Pin            GPIO_PIN_15
 #define KTH7812_NSS_GPIO_Port      GPIOA
 
-/* USART1只保留硬件初始化，调试和Motor Pilot/ASPEP功能暂时停用。 */
+/* USART1连接第一片触觉传感器，Motor Pilot/ASPEP暂时停用。 */
 #define MOTOR_PILOT_TX_Pin         GPIO_PIN_9
 #define MOTOR_PILOT_TX_GPIO_Port   GPIOA
 #define MOTOR_PILOT_RX_Pin         GPIO_PIN_10
 #define MOTOR_PILOT_RX_GPIO_Port   GPIOA
+#define TACTILE_UART1_TX_Pin        MOTOR_PILOT_TX_Pin
+#define TACTILE_UART1_TX_GPIO_Port  MOTOR_PILOT_TX_GPIO_Port
+#define TACTILE_UART1_RX_Pin        MOTOR_PILOT_RX_Pin
+#define TACTILE_UART1_RX_GPIO_Port  MOTOR_PILOT_RX_GPIO_Port
 
-/* USART2轮询触觉传感器地址0x36和0x37。 */
+/* USART2连接第二片触觉传感器。 */
 #define DEBUG_UART_TX_Pin          GPIO_PIN_5
 #define DEBUG_UART_TX_GPIO_Port    GPIOD
 #define DEBUG_UART_RX_Pin          GPIO_PIN_6
 #define DEBUG_UART_RX_GPIO_Port    GPIOD
-#define TACTILE_SENSOR_TX_Pin       DEBUG_UART_TX_Pin
-#define TACTILE_SENSOR_TX_GPIO_Port DEBUG_UART_TX_GPIO_Port
-#define TACTILE_SENSOR_RX_Pin       DEBUG_UART_RX_Pin
-#define TACTILE_SENSOR_RX_GPIO_Port DEBUG_UART_RX_GPIO_Port
+#define TACTILE_UART2_TX_Pin        DEBUG_UART_TX_Pin
+#define TACTILE_UART2_TX_GPIO_Port  DEBUG_UART_TX_GPIO_Port
+#define TACTILE_UART2_RX_Pin        DEBUG_UART_RX_Pin
+#define TACTILE_UART2_RX_GPIO_Port  DEBUG_UART_RX_GPIO_Port
 
 /* RS485调试口，和CAN端子通过跳线帽二选一。 */
 #define DEBUG_RS485_TX_Pin         GPIO_PIN_3

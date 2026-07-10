@@ -68,6 +68,7 @@ extern UART_HandleTypeDef huart2;
 extern UART_HandleTypeDef huart10;
 extern SPI_HandleTypeDef hspi3;
 extern DMA_HandleTypeDef hdma_spi3_tx;
+extern DMA_HandleTypeDef hdma_usart1_rx;
 extern DMA_HandleTypeDef hdma_usart2_rx;
 
 /* USER CODE BEGIN EV */
@@ -239,6 +240,11 @@ void USART10_IRQHandler(void)
 void FDCAN1_IT0_IRQHandler(void)
 {
   HAL_FDCAN_IRQHandler(&hfdcan1);
+}
+
+void DMA1_Stream0_IRQHandler(void)
+{
+  HAL_DMA_IRQHandler(&hdma_usart1_rx);
 }
 
 void DMA1_Stream3_IRQHandler(void)

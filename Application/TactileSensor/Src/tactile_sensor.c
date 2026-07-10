@@ -3,36 +3,43 @@
 #include "cmsis_os2.h"
 #include "debug_uart_transport.h"
 #include "FreeRTOS.h"
+#include "tactile_data_store.h"
+#include "tactile_protocol.h"
 #include "task.h"
 
 #include <stdio.h>
 #include <string.h>
 
+#define TACTILE_SENSOR_PORT_COUNT           2U
 #define TACTILE_SENSOR_ADDRESS_COUNT        2U
-#define TACTILE_HEADER0                     0x55U
-#define TACTILE_HEADER1                     0xAAU
-#define TACTILE_CHECKSUM_SIZE               2U
 #define TACTILE_SAMPLE_PERIOD_MS            25U
 #define TACTILE_RESPONSE_TIMEOUT_MS         5U
 #define TACTILE_STATS_PERIOD_MS             2000U
 #define TACTILE_TX_TIMEOUT_MS               2U
 #define TACTILE_DEBUG_TIMEOUT_MS            10U
 #define TACTILE_DMA_BUFFER_SIZE             512U
-#define TACTILE_DMA_BUFFER_ADDR             0x24000200UL
+#define TACTILE_UART1_DMA_BUFFER_ADDR       0x24000100UL
+#define TACTILE_UART2_DMA_BUFFER_ADDR       0x24000300UL
 #define TACTILE_UART_CLEAR_FLAGS            (UART_CLEAR_OREF | UART_CLEAR_NEF | \
                                               UART_CLEAR_FEF | UART_CLEAR_PEF | \
                                               UART_CLEAR_RTOF | UART_CLEAR_IDLEF)
 
+#if (TACTILE_SENSOR_FRAME_SIZE != TACTILE_PROTOCOL_FRAME_SIZE) || \
+    (TACTILE_SENSOR_ADDRESS_36 != TACTILE_PROTOCOL_ADDRESS_36) || \
+    (TACTILE_SENSOR_ADDRESS_37 != TACTILE_PROTOCOL_ADDRESS_37)
+#error "Tactile sensor API and protocol constants must match"
+#endif
+
 typedef struct
 {
   UART_HandleTypeDef *uart;
+  uint8_t *dma_buffer;
   uint16_t dma_read_position;
-  uint16_t assemble_length;
-  uint32_t current_response_length;
-  uint8_t assemble_buffer[TACTILE_SENSOR_FRAME_SIZE];
-  uint8_t latest_frame[TACTILE_SENSOR_ADDRESS_COUNT]
-                      [TACTILE_SENSOR_FRAME_SIZE];
-  volatile uint32_t frame_count;
+  uint32_t response_length;
+  uint8_t pending_address;
+  uint8_t response_buffer[TACTILE_SENSOR_FRAME_SIZE];
+  uint8_t latest_raw[TACTILE_SENSOR_ADDRESS_COUNT]
+                    [TACTILE_SENSOR_FRAME_SIZE];
   volatile uint32_t valid_frame_count[TACTILE_SENSOR_ADDRESS_COUNT];
   volatile uint32_t rx_event_count;
   volatile uint32_t response_count;
@@ -40,8 +47,7 @@ typedef struct
   volatile uint32_t rx_byte_count;
   volatile uint32_t trigger_count[TACTILE_SENSOR_ADDRESS_COUNT];
   volatile uint32_t checksum_error_count;
-  volatile uint32_t header_error_count;
-  volatile uint32_t sync_drop_count;
+  volatile uint32_t format_error_count;
   volatile uint32_t short_response_count;
   volatile uint32_t noise_flag_count;
   volatile uint32_t framing_flag_count;
@@ -49,29 +55,35 @@ typedef struct
   volatile uint32_t dma_position_error_count;
   volatile uint32_t uart_error_count;
   volatile uint32_t tx_error_count;
-  volatile uint32_t assembler_overflow_count;
+  volatile uint32_t response_overflow_count;
   volatile uint32_t restart_count;
   volatile uint8_t restart_pending;
   volatile uint16_t last_response_length;
   volatile uint16_t last_short_response_length;
-} TactileSensorContext_t;
+} TactilePortContext_t;
 
 static osThreadId_t tactileTaskHandle;
-static TactileSensorContext_t tactileSensor;
+static TactilePortContext_t tactilePorts[TACTILE_SENSOR_PORT_COUNT];
 
 /*
- * DMA缓冲区独占0x24000200-0x240003FF，
- * Keil IRAM2从0x24000400开始，避免链接器把普通变量放入该区域。
+ * USART1和USART2各使用512字节DMA缓冲区，
+ * Keil IRAM2从0x24000500开始，避免普通变量覆盖DMA区域。
  */
 #if defined(__CC_ARM)
-__attribute__((at(TACTILE_DMA_BUFFER_ADDR), aligned(32)))
-static uint8_t tactileDmaBuffer[TACTILE_DMA_BUFFER_SIZE];
+__attribute__((at(TACTILE_UART1_DMA_BUFFER_ADDR), aligned(32)))
+static uint8_t tactileUart1DmaBuffer[TACTILE_DMA_BUFFER_SIZE];
+__attribute__((at(TACTILE_UART2_DMA_BUFFER_ADDR), aligned(32)))
+static uint8_t tactileUart2DmaBuffer[TACTILE_DMA_BUFFER_SIZE];
 #elif defined(__ARMCC_VERSION)
-__attribute__((section(".ARM.__at_0x24000200"), aligned(32)))
-static uint8_t tactileDmaBuffer[TACTILE_DMA_BUFFER_SIZE];
+__attribute__((section(".ARM.__at_0x24000100"), aligned(32)))
+static uint8_t tactileUart1DmaBuffer[TACTILE_DMA_BUFFER_SIZE];
+__attribute__((section(".ARM.__at_0x24000300"), aligned(32)))
+static uint8_t tactileUart2DmaBuffer[TACTILE_DMA_BUFFER_SIZE];
 #else
-__attribute__((section(".dma_buffer_tactile"), aligned(32)))
-static uint8_t tactileDmaBuffer[TACTILE_DMA_BUFFER_SIZE];
+__attribute__((section(".dma_buffer_tactile_uart1"), aligned(32)))
+static uint8_t tactileUart1DmaBuffer[TACTILE_DMA_BUFFER_SIZE];
+__attribute__((section(".dma_buffer_tactile_uart2"), aligned(32)))
+static uint8_t tactileUart2DmaBuffer[TACTILE_DMA_BUFFER_SIZE];
 #endif
 
 static void TactileSensor_Write(const char *text)
@@ -79,301 +91,273 @@ static void TactileSensor_Write(const char *text)
   (void)DebugUartTransport_Write(text, TACTILE_DEBUG_TIMEOUT_MS);
 }
 
-static bool TactileSensor_IsAddress(uint8_t address)
-{
-  return (address == TACTILE_SENSOR_ADDRESS_36) ||
-         (address == TACTILE_SENSOR_ADDRESS_37);
-}
-
 static uint32_t TactileSensor_AddressIndex(uint8_t address)
 {
   return (address == TACTILE_SENSOR_ADDRESS_37) ? 1U : 0U;
 }
 
-static uint16_t TactileSensor_Checksum16(const uint8_t *data,
-                                         uint16_t length)
+static tactile_finger_id_t TactileSensor_PortFinger(uint32_t port_index)
 {
-  uint32_t sum = 0U;
-  uint16_t index;
-
-  for (index = 0U; index < length; index++)
-  {
-    sum += data[index];
-  }
-  return (uint16_t)(sum & 0xFFFFU);
+  return (port_index == TACTILE_SENSOR_PORT_USART1) ?
+         TACTILE_FINGER_LEFT : TACTILE_FINGER_RIGHT;
 }
 
-static bool TactileSensor_ValidateFrame(const uint8_t *frame)
+static tactile_unit_id_t TactileSensor_AddressUnit(uint8_t address)
 {
-  uint16_t checksum_calc;
-  uint16_t checksum_recv;
-
-  if ((frame[0] != TACTILE_HEADER0) ||
-      (frame[1] != TACTILE_HEADER1) ||
-      !TactileSensor_IsAddress(frame[2]))
-  {
-    tactileSensor.header_error_count++;
-    return false;
-  }
-
-  checksum_calc = TactileSensor_Checksum16(
-    frame, TACTILE_SENSOR_FRAME_SIZE - TACTILE_CHECKSUM_SIZE);
-  checksum_recv =
-    (uint16_t)frame[TACTILE_SENSOR_FRAME_SIZE - 2U] |
-    (uint16_t)((uint16_t)frame[TACTILE_SENSOR_FRAME_SIZE - 1U] << 8U);
-  if (checksum_calc != checksum_recv)
-  {
-    tactileSensor.checksum_error_count++;
-    return false;
-  }
-  return true;
+  return (address == TACTILE_SENSOR_ADDRESS_37) ?
+         TACTILE_UNIT_UPPER : TACTILE_UNIT_LOWER;
 }
 
-static void TactileSensor_ResyncAssembler(void)
+static TactilePortContext_t *TactileSensor_FindPort(
+  UART_HandleTypeDef *uart)
 {
-  uint16_t keep_start = TACTILE_SENSOR_FRAME_SIZE;
-  uint16_t index;
+  uint32_t port_index;
 
-  for (index = 1U; index < (TACTILE_SENSOR_FRAME_SIZE - 2U); index++)
+  for (port_index = 0U;
+       port_index < TACTILE_SENSOR_PORT_COUNT;
+       port_index++)
   {
-    if ((tactileSensor.assemble_buffer[index] == TACTILE_HEADER0) &&
-        (tactileSensor.assemble_buffer[index + 1U] == TACTILE_HEADER1) &&
-        TactileSensor_IsAddress(
-          tactileSensor.assemble_buffer[index + 2U]))
+    if (tactilePorts[port_index].uart == uart)
     {
-      keep_start = index;
-      break;
+      return &tactilePorts[port_index];
     }
   }
-
-  if (keep_start == TACTILE_SENSOR_FRAME_SIZE)
-  {
-    if ((tactileSensor.assemble_buffer[TACTILE_SENSOR_FRAME_SIZE - 2U] ==
-         TACTILE_HEADER0) &&
-        (tactileSensor.assemble_buffer[TACTILE_SENSOR_FRAME_SIZE - 1U] ==
-         TACTILE_HEADER1))
-    {
-      keep_start = TACTILE_SENSOR_FRAME_SIZE - 2U;
-    }
-    else if (tactileSensor.assemble_buffer[TACTILE_SENSOR_FRAME_SIZE - 1U] ==
-             TACTILE_HEADER0)
-    {
-      keep_start = TACTILE_SENSOR_FRAME_SIZE - 1U;
-    }
-  }
-
-  tactileSensor.sync_drop_count += keep_start;
-  tactileSensor.assemble_length = TACTILE_SENSOR_FRAME_SIZE - keep_start;
-  if (tactileSensor.assemble_length > 0U)
-  {
-    memmove(tactileSensor.assemble_buffer,
-            &tactileSensor.assemble_buffer[keep_start],
-            tactileSensor.assemble_length);
-  }
+  return NULL;
 }
 
-static void TactileSensor_ProcessByte(uint8_t data)
+static uint32_t TactileSensor_PortIndex(const TactilePortContext_t *port)
 {
-  if (tactileSensor.assemble_length == 0U)
-  {
-    if (data == TACTILE_HEADER0)
-    {
-      tactileSensor.assemble_buffer[0] = data;
-      tactileSensor.assemble_length = 1U;
-    }
-    else
-    {
-      tactileSensor.sync_drop_count++;
-    }
-    return;
-  }
+  return (port == &tactilePorts[TACTILE_SENSOR_PORT_USART1]) ?
+         TACTILE_SENSOR_PORT_USART1 : TACTILE_SENSOR_PORT_USART2;
+}
 
-  if (tactileSensor.assemble_length == 1U)
+static void TactileSensor_RecordProtocolError(
+  TactilePortContext_t *port,
+  tactile_protocol_result_t result)
+{
+  if (result == TACTILE_PROTOCOL_BAD_CHECKSUM)
   {
-    if (data == TACTILE_HEADER1)
-    {
-      tactileSensor.assemble_buffer[1] = data;
-      tactileSensor.assemble_length = 2U;
-    }
-    else if (data == TACTILE_HEADER0)
-    {
-      tactileSensor.sync_drop_count++;
-    }
-    else
-    {
-      tactileSensor.sync_drop_count += 2U;
-      tactileSensor.assemble_length = 0U;
-    }
-    return;
-  }
-
-  if (tactileSensor.assemble_length == 2U)
-  {
-    if (TactileSensor_IsAddress(data))
-    {
-      tactileSensor.assemble_buffer[2] = data;
-      tactileSensor.assemble_length = 3U;
-    }
-    else
-    {
-      tactileSensor.header_error_count++;
-      if (data == TACTILE_HEADER0)
-      {
-        tactileSensor.sync_drop_count += 2U;
-        tactileSensor.assemble_buffer[0] = data;
-        tactileSensor.assemble_length = 1U;
-      }
-      else
-      {
-        tactileSensor.sync_drop_count += 3U;
-        tactileSensor.assemble_length = 0U;
-      }
-    }
-    return;
-  }
-
-  if (tactileSensor.assemble_length >= TACTILE_SENSOR_FRAME_SIZE)
-  {
-    tactileSensor.assembler_overflow_count++;
-    tactileSensor.assemble_length = 0U;
-    return;
-  }
-
-  tactileSensor.assemble_buffer[tactileSensor.assemble_length++] = data;
-  if (tactileSensor.assemble_length < TACTILE_SENSOR_FRAME_SIZE)
-  {
-    return;
-  }
-
-  tactileSensor.frame_count++;
-  if (TactileSensor_ValidateFrame(tactileSensor.assemble_buffer))
-  {
-    uint32_t address_index =
-      TactileSensor_AddressIndex(tactileSensor.assemble_buffer[2]);
-
-    memcpy(tactileSensor.latest_frame[address_index],
-           tactileSensor.assemble_buffer,
-           TACTILE_SENSOR_FRAME_SIZE);
-    /* 数据复制完成后再更新计数，读取方看到新序号时帧内容已经完整。 */
-    tactileSensor.valid_frame_count[address_index]++;
-    tactileSensor.assemble_length = 0U;
+    port->checksum_error_count++;
   }
   else
   {
-    TactileSensor_ResyncAssembler();
+    port->format_error_count++;
   }
 }
 
-static void TactileSensor_ProcessBytes(const uint8_t *data,
-                                       uint16_t length)
+static void TactileSensor_FinalizeResponse(TactilePortContext_t *port)
 {
-  uint16_t index;
+  tactile_unit_data_t unit_data;
+  tactile_protocol_result_t result;
+  uint32_t address_index;
+  uint32_t port_index;
 
-  for (index = 0U; index < length; index++)
+  port->last_response_length = (port->response_length > 0xFFFFU) ?
+    0xFFFFU : (uint16_t)port->response_length;
+  if (port->response_length != TACTILE_SENSOR_FRAME_SIZE)
   {
-    TactileSensor_ProcessByte(data[index]);
+    if (port->response_length < TACTILE_SENSOR_FRAME_SIZE)
+    {
+      port->short_response_count++;
+      port->last_short_response_length = (uint16_t)port->response_length;
+    }
+    else
+    {
+      port->response_overflow_count++;
+    }
+    port->response_length = 0U;
+    port->response_count++;
+    return;
   }
+
+  result = TactileProtocol_DecodeFrame(port->pending_address,
+                                       port->response_buffer,
+                                       TACTILE_SENSOR_FRAME_SIZE,
+                                       &unit_data);
+  if (result != TACTILE_PROTOCOL_OK)
+  {
+    TactileSensor_RecordProtocolError(port, result);
+    port->response_length = 0U;
+    port->response_count++;
+    return;
+  }
+
+  address_index = TactileSensor_AddressIndex(port->pending_address);
+  memcpy(port->latest_raw[address_index],
+         port->response_buffer,
+         TACTILE_SENSOR_FRAME_SIZE);
+  port->valid_frame_count[address_index]++;
+
+  port_index = TactileSensor_PortIndex(port);
+  TactileDataStore_UpdateUnit(
+    TactileSensor_PortFinger(port_index),
+    TactileSensor_AddressUnit(port->pending_address),
+    &unit_data);
+
+  port->response_length = 0U;
+  port->response_count++;
 }
 
-static void TactileSensor_RecordAndClearRxFlags(void)
+static void TactileSensor_AppendRxBytes(TactilePortContext_t *port,
+                                        const uint8_t *data,
+                                        uint16_t length)
 {
-  uint32_t isr = tactileSensor.uart->Instance->ISR;
+  uint16_t free_length;
+  uint16_t copy_length;
+
+  if ((data == NULL) || (length == 0U))
+  {
+    return;
+  }
+
+  free_length = (port->response_length < TACTILE_SENSOR_FRAME_SIZE) ?
+    (uint16_t)(TACTILE_SENSOR_FRAME_SIZE - port->response_length) : 0U;
+  copy_length = (length <= free_length) ? length : free_length;
+  if (copy_length > 0U)
+  {
+    memcpy(&port->response_buffer[(uint16_t)port->response_length],
+           data,
+           copy_length);
+  }
+  port->response_length += length;
+}
+
+static void TactileSensor_RecordAndClearRxFlags(
+  TactilePortContext_t *port)
+{
+  uint32_t isr = port->uart->Instance->ISR;
   uint32_t clear_flags = 0U;
 
   if ((isr & USART_ISR_NE) != 0U)
   {
-    tactileSensor.noise_flag_count++;
+    port->noise_flag_count++;
     clear_flags |= UART_CLEAR_NEF;
   }
   if ((isr & USART_ISR_FE) != 0U)
   {
-    tactileSensor.framing_flag_count++;
+    port->framing_flag_count++;
     clear_flags |= UART_CLEAR_FEF;
   }
   if ((isr & USART_ISR_ORE) != 0U)
   {
-    tactileSensor.overrun_flag_count++;
+    port->overrun_flag_count++;
     clear_flags |= UART_CLEAR_OREF;
   }
   if (clear_flags != 0U)
   {
-    __HAL_UART_CLEAR_FLAG(tactileSensor.uart, clear_flags);
+    __HAL_UART_CLEAR_FLAG(port->uart, clear_flags);
   }
 }
 
-static void TactileSensor_FlushRx(void)
+static void TactileSensor_FlushRx(TactilePortContext_t *port)
 {
-  __HAL_UART_CLEAR_FLAG(tactileSensor.uart, TACTILE_UART_CLEAR_FLAGS);
-  __HAL_UART_SEND_REQ(tactileSensor.uart, UART_RXDATA_FLUSH_REQUEST);
+  __HAL_UART_CLEAR_FLAG(port->uart, TACTILE_UART_CLEAR_FLAGS);
+  __HAL_UART_SEND_REQ(port->uart, UART_RXDATA_FLUSH_REQUEST);
 }
 
-static bool TactileSensor_StartReceive(void)
+static bool TactileSensor_StartReceive(TactilePortContext_t *port)
 {
   HAL_StatusTypeDef status;
 
-  if ((tactileSensor.uart == NULL) ||
-      (tactileSensor.uart->RxState != HAL_UART_STATE_READY))
+  if ((port->uart == NULL) ||
+      (port->uart->RxState != HAL_UART_STATE_READY))
   {
     return false;
   }
 
-  tactileSensor.dma_read_position = 0U;
-  status = HAL_UARTEx_ReceiveToIdle_DMA(tactileSensor.uart,
-                                        tactileDmaBuffer,
+  port->dma_read_position = 0U;
+  status = HAL_UARTEx_ReceiveToIdle_DMA(port->uart,
+                                        port->dma_buffer,
                                         TACTILE_DMA_BUFFER_SIZE);
-  if ((status == HAL_OK) && (tactileSensor.uart->hdmarx != NULL))
+  if ((status == HAL_OK) && (port->uart->hdmarx != NULL))
   {
-    __HAL_DMA_DISABLE_IT(tactileSensor.uart->hdmarx, DMA_IT_HT);
-    /* 帧校验负责最终判定，NE/FE不再中止循环DMA。 */
-    CLEAR_BIT(tactileSensor.uart->Instance->CR3, USART_CR3_EIE);
+    __HAL_DMA_DISABLE_IT(port->uart->hdmarx, DMA_IT_HT);
+    /* 协议校验负责最终判定，NE/FE不再中止循环DMA。 */
+    CLEAR_BIT(port->uart->Instance->CR3, USART_CR3_EIE);
   }
   return status == HAL_OK;
 }
 
-static bool TactileSensor_RestartReceive(void)
+static bool TactileSensor_RestartReceive(TactilePortContext_t *port)
 {
-  if (tactileSensor.uart->RxState != HAL_UART_STATE_READY)
+  if (port->uart->RxState != HAL_UART_STATE_READY)
   {
-    (void)HAL_UART_AbortReceive(tactileSensor.uart);
+    (void)HAL_UART_AbortReceive(port->uart);
   }
-  tactileSensor.dma_read_position = 0U;
-  tactileSensor.assemble_length = 0U;
-  tactileSensor.current_response_length = 0U;
-  TactileSensor_FlushRx();
-  return TactileSensor_StartReceive();
+  port->dma_read_position = 0U;
+  port->response_length = 0U;
+  TactileSensor_FlushRx(port);
+  return TactileSensor_StartReceive(port);
 }
 
-static void TactileSensor_SendRequest(uint8_t address)
+static void TactileSensor_SendRequest(TactilePortContext_t *port,
+                                      uint8_t address)
 {
-  uint8_t request[2] = {
-    address,
-    (uint8_t)(0xFFU - address)
-  };
+  uint8_t command[2];
   uint32_t address_index = TactileSensor_AddressIndex(address);
   HAL_StatusTypeDef status;
 
-  status = HAL_UART_Transmit(tactileSensor.uart,
-                             request,
-                             sizeof(request),
+  TactileProtocol_BuildReadCommand(address, command);
+  port->pending_address = address;
+  status = HAL_UART_Transmit(port->uart,
+                             command,
+                             sizeof(command),
                              TACTILE_TX_TIMEOUT_MS);
-  tactileSensor.trigger_count[address_index]++;
+  port->trigger_count[address_index]++;
   if (status != HAL_OK)
   {
-    tactileSensor.tx_error_count++;
+    port->tx_error_count++;
   }
 }
 
-static void TactileSensor_WaitForResponse(uint32_t previous_count,
-                                          uint32_t timeout_ticks)
+static void TactileSensor_RequestAddress(uint8_t address,
+                                         uint32_t timeout_ticks)
 {
-  uint32_t start = osKernelGetTickCount();
+  uint32_t previous_count[TACTILE_SENSOR_PORT_COUNT];
+  uint32_t start;
+  uint32_t port_index;
 
-  while (tactileSensor.response_count == previous_count)
+  for (port_index = 0U;
+       port_index < TACTILE_SENSOR_PORT_COUNT;
+       port_index++)
   {
+    previous_count[port_index] = tactilePorts[port_index].response_count;
+    TactileSensor_SendRequest(&tactilePorts[port_index], address);
+  }
+
+  start = osKernelGetTickCount();
+  for (;;)
+  {
+    bool all_received = true;
+
+    for (port_index = 0U;
+         port_index < TACTILE_SENSOR_PORT_COUNT;
+         port_index++)
+    {
+      if (tactilePorts[port_index].response_count ==
+          previous_count[port_index])
+      {
+        all_received = false;
+      }
+    }
+    if (all_received)
+    {
+      return;
+    }
     if ((osKernelGetTickCount() - start) >= timeout_ticks)
     {
-      tactileSensor.response_timeout_count++;
-      break;
+      for (port_index = 0U;
+           port_index < TACTILE_SENSOR_PORT_COUNT;
+           port_index++)
+      {
+        if (tactilePorts[port_index].response_count ==
+            previous_count[port_index])
+        {
+          tactilePorts[port_index].response_timeout_count++;
+          tactilePorts[port_index].response_length = 0U;
+        }
+      }
+      return;
     }
     (void)osDelay(1U);
   }
@@ -390,93 +374,239 @@ static uint32_t TactileSensor_Rate10(uint32_t delta,
   return (uint32_t)(((uint64_t)delta * tick_frequency * 10ULL) / elapsed);
 }
 
-static void TactileSensor_DumpStats(uint32_t elapsed,
-                                    uint32_t tick_frequency,
-                                    uint32_t *last_frames,
-                                    uint32_t last_valid[TACTILE_SENSOR_ADDRESS_COUNT],
-                                    uint32_t last_triggers[TACTILE_SENSOR_ADDRESS_COUNT],
-                                    uint32_t *last_bytes)
+static void TactileSensor_FormatForce(float force_n,
+                                      char *text,
+                                      uint16_t capacity)
 {
-  uint32_t frame_count = tactileSensor.frame_count;
-  uint32_t valid_36 = tactileSensor.valid_frame_count[0];
-  uint32_t valid_37 = tactileSensor.valid_frame_count[1];
-  uint32_t trigger_36 = tactileSensor.trigger_count[0];
-  uint32_t trigger_37 = tactileSensor.trigger_count[1];
-  uint32_t byte_count = tactileSensor.rx_byte_count;
-  uint32_t rx_rate10 = TactileSensor_Rate10(
-    frame_count - *last_frames, elapsed, tick_frequency);
-  uint32_t rate_36 = TactileSensor_Rate10(
-    valid_36 - last_valid[0], elapsed, tick_frequency);
-  uint32_t rate_37 = TactileSensor_Rate10(
-    valid_37 - last_valid[1], elapsed, tick_frequency);
-  uint32_t tx_rate_36 = TactileSensor_Rate10(
-    trigger_36 - last_triggers[0], elapsed, tick_frequency);
-  uint32_t tx_rate_37 = TactileSensor_Rate10(
-    trigger_37 - last_triggers[1], elapsed, tick_frequency);
-  uint32_t bytes_per_second =
-    (uint32_t)(((uint64_t)(byte_count - *last_bytes) * tick_frequency) /
-               elapsed);
-  char line[384];
+  int32_t milli_newton;
+  uint32_t magnitude;
+  const char *sign;
 
-  *last_frames = frame_count;
-  last_valid[0] = valid_36;
-  last_valid[1] = valid_37;
-  last_triggers[0] = trigger_36;
-  last_triggers[1] = trigger_37;
-  *last_bytes = byte_count;
+  if ((text == NULL) || (capacity == 0U))
+  {
+    return;
+  }
+
+  milli_newton = (force_n >= 0.0f) ?
+    (int32_t)(force_n * 1000.0f + 0.5f) :
+    (int32_t)(force_n * 1000.0f - 0.5f);
+  sign = (milli_newton < 0) ? "-" : "";
+  magnitude = (milli_newton < 0) ?
+    (uint32_t)(-(int64_t)milli_newton) : (uint32_t)milli_newton;
+  (void)snprintf(text, capacity, "%s%lu.%03lu",
+                 sign,
+                 (unsigned long)(magnitude / 1000U),
+                 (unsigned long)(magnitude % 1000U));
+}
+
+static void TactileSensor_DumpForce(void)
+{
+  gripper_tactile_data_t data;
+  char force_text[8][16];
+  char line[320];
+
+  if (!TactileDataStore_GetLatest(&data))
+  {
+    return;
+  }
+
+  TactileSensor_FormatForce(
+    data.finger[TACTILE_FINGER_LEFT]
+        .unit[TACTILE_UNIT_LOWER].normal_force_n,
+    force_text[0], sizeof(force_text[0]));
+  TactileSensor_FormatForce(
+    data.finger[TACTILE_FINGER_LEFT]
+        .unit[TACTILE_UNIT_LOWER].tangential_force_n,
+    force_text[1], sizeof(force_text[1]));
+  TactileSensor_FormatForce(
+    data.finger[TACTILE_FINGER_LEFT]
+        .unit[TACTILE_UNIT_UPPER].normal_force_n,
+    force_text[2], sizeof(force_text[2]));
+  TactileSensor_FormatForce(
+    data.finger[TACTILE_FINGER_LEFT]
+        .unit[TACTILE_UNIT_UPPER].tangential_force_n,
+    force_text[3], sizeof(force_text[3]));
+  TactileSensor_FormatForce(
+    data.finger[TACTILE_FINGER_RIGHT]
+        .unit[TACTILE_UNIT_LOWER].normal_force_n,
+    force_text[4], sizeof(force_text[4]));
+  TactileSensor_FormatForce(
+    data.finger[TACTILE_FINGER_RIGHT]
+        .unit[TACTILE_UNIT_LOWER].tangential_force_n,
+    force_text[5], sizeof(force_text[5]));
+  TactileSensor_FormatForce(
+    data.finger[TACTILE_FINGER_RIGHT]
+        .unit[TACTILE_UNIT_UPPER].normal_force_n,
+    force_text[6], sizeof(force_text[6]));
+  TactileSensor_FormatForce(
+    data.finger[TACTILE_FINGER_RIGHT]
+        .unit[TACTILE_UNIT_UPPER].tangential_force_n,
+    force_text[7], sizeof(force_text[7]));
 
   (void)snprintf(
     line, sizeof(line),
-    "TACTILE,STAT,rx=%lu.%lu,A36=%lu.%lu,A37=%lu.%lu,tx36=%lu.%lu,tx37=%lu.%lu,bps=%lu,total=%lu,v36=%lu,v37=%lu,trig36=%lu,trig37=%lu,evt=%lu,len=%u,resp=%u,short=%lu,lastshort=%u,ckerr=%lu,hdrerr=%lu,drop=%lu,ne=%lu,fe=%lu,ore=%lu,timeout=%lu,dmaerr=%lu,uart_err=%lu,txerr=%lu,ovf=%lu\r\n",
-    (unsigned long)(rx_rate10 / 10U),
-    (unsigned long)(rx_rate10 % 10U),
-    (unsigned long)(rate_36 / 10U),
-    (unsigned long)(rate_36 % 10U),
-    (unsigned long)(rate_37 / 10U),
-    (unsigned long)(rate_37 % 10U),
-    (unsigned long)(tx_rate_36 / 10U),
-    (unsigned long)(tx_rate_36 % 10U),
-    (unsigned long)(tx_rate_37 / 10U),
-    (unsigned long)(tx_rate_37 % 10U),
-    (unsigned long)bytes_per_second,
-    (unsigned long)frame_count,
-    (unsigned long)valid_36,
-    (unsigned long)valid_37,
-    (unsigned long)trigger_36,
-    (unsigned long)trigger_37,
-    (unsigned long)tactileSensor.rx_event_count,
-    (unsigned int)TACTILE_SENSOR_FRAME_SIZE,
-    (unsigned int)tactileSensor.last_response_length,
-    (unsigned long)tactileSensor.short_response_count,
-    (unsigned int)tactileSensor.last_short_response_length,
-    (unsigned long)tactileSensor.checksum_error_count,
-    (unsigned long)tactileSensor.header_error_count,
-    (unsigned long)tactileSensor.sync_drop_count,
-    (unsigned long)tactileSensor.noise_flag_count,
-    (unsigned long)tactileSensor.framing_flag_count,
-    (unsigned long)tactileSensor.overrun_flag_count,
-    (unsigned long)tactileSensor.response_timeout_count,
-    (unsigned long)tactileSensor.dma_position_error_count,
-    (unsigned long)tactileSensor.uart_error_count,
-    (unsigned long)tactileSensor.tx_error_count,
-    (unsigned long)tactileSensor.assembler_overflow_count);
+    "TACTILE,FORCE,seq=%lu,L36,N=%s,T=%s,L37,N=%s,T=%s,R36,N=%s,T=%s,R37,N=%s,T=%s\r\n",
+    (unsigned long)data.sequence,
+    force_text[0], force_text[1],
+    force_text[2], force_text[3],
+    force_text[4], force_text[5],
+    force_text[6], force_text[7]);
   TactileSensor_Write(line);
 }
 
-void TactileSensor_Init(UART_HandleTypeDef *uart)
+static void TactileSensor_DumpStats(
+  uint32_t elapsed,
+  uint32_t tick_frequency,
+  uint32_t last_valid[TACTILE_SENSOR_PORT_COUNT]
+                     [TACTILE_SENSOR_ADDRESS_COUNT],
+  uint32_t last_triggers[TACTILE_SENSOR_PORT_COUNT]
+                        [TACTILE_SENSOR_ADDRESS_COUNT],
+  uint32_t last_bytes[TACTILE_SENSOR_PORT_COUNT],
+  uint32_t *last_snapshot)
 {
-  memset(&tactileSensor, 0, sizeof(tactileSensor));
-  tactileSensor.uart = uart;
+  gripper_tactile_data_t data;
+  uint32_t rates[TACTILE_SENSOR_PORT_COUNT]
+                [TACTILE_SENSOR_ADDRESS_COUNT];
+  uint32_t tx_rates[TACTILE_SENSOR_PORT_COUNT];
+  uint32_t bytes_per_second[TACTILE_SENSOR_PORT_COUNT];
+  uint32_t snapshot_count = 0U;
+  uint32_t snapshot_rate;
+  uint32_t port_index;
+  uint32_t address_index;
+  char line[512];
+
+  if (TactileDataStore_GetLatest(&data))
+  {
+    snapshot_count = data.sequence;
+  }
+  snapshot_rate = TactileSensor_Rate10(
+    snapshot_count - *last_snapshot, elapsed, tick_frequency);
+  *last_snapshot = snapshot_count;
+
+  for (port_index = 0U;
+       port_index < TACTILE_SENSOR_PORT_COUNT;
+       port_index++)
+  {
+    TactilePortContext_t *port = &tactilePorts[port_index];
+
+    for (address_index = 0U;
+         address_index < TACTILE_SENSOR_ADDRESS_COUNT;
+         address_index++)
+    {
+      uint32_t current = port->valid_frame_count[address_index];
+
+      rates[port_index][address_index] = TactileSensor_Rate10(
+        current - last_valid[port_index][address_index],
+        elapsed, tick_frequency);
+      last_valid[port_index][address_index] = current;
+    }
+    tx_rates[port_index] = TactileSensor_Rate10(
+      port->trigger_count[0] - last_triggers[port_index][0],
+      elapsed, tick_frequency);
+    last_triggers[port_index][0] = port->trigger_count[0];
+    last_triggers[port_index][1] = port->trigger_count[1];
+    bytes_per_second[port_index] =
+      (uint32_t)(((uint64_t)(port->rx_byte_count - last_bytes[port_index]) *
+                  tick_frequency) / elapsed);
+    last_bytes[port_index] = port->rx_byte_count;
+  }
+
+  (void)snprintf(
+    line, sizeof(line),
+    "TACTILE,STAT,snap=%lu.%lu,U1_36=%lu.%lu,U1_37=%lu.%lu,U2_36=%lu.%lu,U2_37=%lu.%lu,tx1=%lu.%lu,tx2=%lu.%lu,bps1=%lu,bps2=%lu,ck1=%lu,ck2=%lu,fmt1=%lu,fmt2=%lu,short1=%lu/%u,short2=%lu/%u,fe1=%lu,fe2=%lu,ne1=%lu,ne2=%lu,ore1=%lu,ore2=%lu,to1=%lu,to2=%lu,dma1=%lu,dma2=%lu,uart1=%lu,uart2=%lu,txerr1=%lu,txerr2=%lu,ovf1=%lu,ovf2=%lu\r\n",
+    (unsigned long)(snapshot_rate / 10U),
+    (unsigned long)(snapshot_rate % 10U),
+    (unsigned long)(rates[TACTILE_SENSOR_PORT_USART1][0] / 10U),
+    (unsigned long)(rates[TACTILE_SENSOR_PORT_USART1][0] % 10U),
+    (unsigned long)(rates[TACTILE_SENSOR_PORT_USART1][1] / 10U),
+    (unsigned long)(rates[TACTILE_SENSOR_PORT_USART1][1] % 10U),
+    (unsigned long)(rates[TACTILE_SENSOR_PORT_USART2][0] / 10U),
+    (unsigned long)(rates[TACTILE_SENSOR_PORT_USART2][0] % 10U),
+    (unsigned long)(rates[TACTILE_SENSOR_PORT_USART2][1] / 10U),
+    (unsigned long)(rates[TACTILE_SENSOR_PORT_USART2][1] % 10U),
+    (unsigned long)(tx_rates[TACTILE_SENSOR_PORT_USART1] / 10U),
+    (unsigned long)(tx_rates[TACTILE_SENSOR_PORT_USART1] % 10U),
+    (unsigned long)(tx_rates[TACTILE_SENSOR_PORT_USART2] / 10U),
+    (unsigned long)(tx_rates[TACTILE_SENSOR_PORT_USART2] % 10U),
+    (unsigned long)bytes_per_second[TACTILE_SENSOR_PORT_USART1],
+    (unsigned long)bytes_per_second[TACTILE_SENSOR_PORT_USART2],
+    (unsigned long)tactilePorts[TACTILE_SENSOR_PORT_USART1]
+                  .checksum_error_count,
+    (unsigned long)tactilePorts[TACTILE_SENSOR_PORT_USART2]
+                  .checksum_error_count,
+    (unsigned long)tactilePorts[TACTILE_SENSOR_PORT_USART1]
+                  .format_error_count,
+    (unsigned long)tactilePorts[TACTILE_SENSOR_PORT_USART2]
+                  .format_error_count,
+    (unsigned long)tactilePorts[TACTILE_SENSOR_PORT_USART1]
+                  .short_response_count,
+    (unsigned int)tactilePorts[TACTILE_SENSOR_PORT_USART1]
+                 .last_short_response_length,
+    (unsigned long)tactilePorts[TACTILE_SENSOR_PORT_USART2]
+                  .short_response_count,
+    (unsigned int)tactilePorts[TACTILE_SENSOR_PORT_USART2]
+                 .last_short_response_length,
+    (unsigned long)tactilePorts[TACTILE_SENSOR_PORT_USART1]
+                  .framing_flag_count,
+    (unsigned long)tactilePorts[TACTILE_SENSOR_PORT_USART2]
+                  .framing_flag_count,
+    (unsigned long)tactilePorts[TACTILE_SENSOR_PORT_USART1]
+                  .noise_flag_count,
+    (unsigned long)tactilePorts[TACTILE_SENSOR_PORT_USART2]
+                  .noise_flag_count,
+    (unsigned long)tactilePorts[TACTILE_SENSOR_PORT_USART1]
+                  .overrun_flag_count,
+    (unsigned long)tactilePorts[TACTILE_SENSOR_PORT_USART2]
+                  .overrun_flag_count,
+    (unsigned long)tactilePorts[TACTILE_SENSOR_PORT_USART1]
+                  .response_timeout_count,
+    (unsigned long)tactilePorts[TACTILE_SENSOR_PORT_USART2]
+                  .response_timeout_count,
+    (unsigned long)tactilePorts[TACTILE_SENSOR_PORT_USART1]
+                  .dma_position_error_count,
+    (unsigned long)tactilePorts[TACTILE_SENSOR_PORT_USART2]
+                  .dma_position_error_count,
+    (unsigned long)tactilePorts[TACTILE_SENSOR_PORT_USART1]
+                  .uart_error_count,
+    (unsigned long)tactilePorts[TACTILE_SENSOR_PORT_USART2]
+                  .uart_error_count,
+    (unsigned long)tactilePorts[TACTILE_SENSOR_PORT_USART1]
+                  .tx_error_count,
+    (unsigned long)tactilePorts[TACTILE_SENSOR_PORT_USART2]
+                  .tx_error_count,
+    (unsigned long)tactilePorts[TACTILE_SENSOR_PORT_USART1]
+                  .response_overflow_count,
+    (unsigned long)tactilePorts[TACTILE_SENSOR_PORT_USART2]
+                  .response_overflow_count);
+  TactileSensor_Write(line);
+}
+
+void TactileSensor_Init(UART_HandleTypeDef *uart1,
+                        UART_HandleTypeDef *uart2)
+{
+  memset(tactilePorts, 0, sizeof(tactilePorts));
+  tactilePorts[TACTILE_SENSOR_PORT_USART1].uart = uart1;
+  tactilePorts[TACTILE_SENSOR_PORT_USART1].dma_buffer =
+    tactileUart1DmaBuffer;
+  tactilePorts[TACTILE_SENSOR_PORT_USART2].uart = uart2;
+  tactilePorts[TACTILE_SENSOR_PORT_USART2].dma_buffer =
+    tactileUart2DmaBuffer;
+  TactileDataStore_Init();
+}
+
+bool TactileSensor_GetLatestData(gripper_tactile_data_t *data)
+{
+  return TactileDataStore_GetLatest(data);
 }
 
 bool TactileSensor_GetLatestRaw(uint8_t *buffer,
                                 uint16_t capacity,
                                 uint32_t *frame_count)
 {
-  return TactileSensor_GetLatestRawByAddress(TACTILE_SENSOR_ADDRESS_36,
-                                             buffer,
-                                             capacity,
-                                             frame_count);
+  return TactileSensor_GetLatestRawByPort(
+    TACTILE_SENSOR_PORT_USART2,
+    TACTILE_SENSOR_ADDRESS_36,
+    buffer, capacity, frame_count);
 }
 
 bool TactileSensor_GetLatestRawByAddress(uint8_t address,
@@ -484,22 +614,37 @@ bool TactileSensor_GetLatestRawByAddress(uint8_t address,
                                          uint16_t capacity,
                                          uint32_t *frame_count)
 {
+  return TactileSensor_GetLatestRawByPort(
+    TACTILE_SENSOR_PORT_USART2,
+    address,
+    buffer, capacity, frame_count);
+}
+
+bool TactileSensor_GetLatestRawByPort(uint8_t port_index,
+                                      uint8_t address,
+                                      uint8_t *buffer,
+                                      uint16_t capacity,
+                                      uint32_t *frame_count)
+{
+  TactilePortContext_t *port;
   uint32_t address_index;
   uint32_t count;
 
-  if (!TactileSensor_IsAddress(address) ||
+  if ((port_index >= TACTILE_SENSOR_PORT_COUNT) ||
+      !TactileProtocol_IsAddress(address) ||
       (buffer == NULL) ||
       (capacity < TACTILE_SENSOR_FRAME_SIZE))
   {
     return false;
   }
+  port = &tactilePorts[port_index];
   address_index = TactileSensor_AddressIndex(address);
 
   taskENTER_CRITICAL();
   memcpy(buffer,
-         tactileSensor.latest_frame[address_index],
+         port->latest_raw[address_index],
          TACTILE_SENSOR_FRAME_SIZE);
-  count = tactileSensor.valid_frame_count[address_index];
+  count = port->valid_frame_count[address_index];
   taskEXIT_CRITICAL();
   if (frame_count != NULL)
   {
@@ -508,25 +653,26 @@ bool TactileSensor_GetLatestRawByAddress(uint8_t address,
   return count != 0U;
 }
 
-void TactileSensor_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
+void TactileSensor_RxEventCallback(UART_HandleTypeDef *uart, uint16_t size)
 {
+  TactilePortContext_t *port = TactileSensor_FindPort(uart);
   HAL_UART_RxEventTypeTypeDef event_type;
   uint16_t previous_position;
   uint16_t current_position;
   uint16_t chunk_length = 0U;
 
-  if ((tactileSensor.uart == NULL) || (huart != tactileSensor.uart))
+  if (port == NULL)
   {
     return;
   }
   if (size > TACTILE_DMA_BUFFER_SIZE)
   {
-    tactileSensor.dma_position_error_count++;
+    port->dma_position_error_count++;
     return;
   }
 
-  event_type = HAL_UARTEx_GetRxEventType(huart);
-  previous_position = tactileSensor.dma_read_position;
+  event_type = HAL_UARTEx_GetRxEventType(uart);
+  previous_position = port->dma_read_position;
   current_position = size;
   if (current_position == TACTILE_DMA_BUFFER_SIZE)
   {
@@ -535,67 +681,54 @@ void TactileSensor_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
     if (previous_position != 0U)
     {
       chunk_length = TACTILE_DMA_BUFFER_SIZE - previous_position;
-      TactileSensor_ProcessBytes(&tactileDmaBuffer[previous_position],
-                                 chunk_length);
+      TactileSensor_AppendRxBytes(
+        port, &port->dma_buffer[previous_position], chunk_length);
     }
   }
   else if (current_position > previous_position)
   {
     chunk_length = current_position - previous_position;
-    TactileSensor_ProcessBytes(&tactileDmaBuffer[previous_position],
-                               chunk_length);
+    TactileSensor_AppendRxBytes(
+      port, &port->dma_buffer[previous_position], chunk_length);
   }
   else if (current_position < previous_position)
   {
     uint16_t tail_length = TACTILE_DMA_BUFFER_SIZE - previous_position;
 
     chunk_length = tail_length + current_position;
-    TactileSensor_ProcessBytes(&tactileDmaBuffer[previous_position],
-                               tail_length);
+    TactileSensor_AppendRxBytes(
+      port, &port->dma_buffer[previous_position], tail_length);
     if (current_position > 0U)
     {
-      TactileSensor_ProcessBytes(tactileDmaBuffer, current_position);
+      TactileSensor_AppendRxBytes(port,
+                                  port->dma_buffer,
+                                  current_position);
     }
   }
 
-  tactileSensor.dma_read_position = current_position;
+  port->dma_read_position = current_position;
   if (chunk_length > 0U)
   {
-    tactileSensor.rx_byte_count += chunk_length;
-    tactileSensor.rx_event_count++;
-    tactileSensor.current_response_length += chunk_length;
+    port->rx_byte_count += chunk_length;
+    port->rx_event_count++;
   }
-  TactileSensor_RecordAndClearRxFlags();
+  TactileSensor_RecordAndClearRxFlags(port);
 
   if ((event_type == HAL_UART_RXEVENT_IDLE) &&
-      (tactileSensor.current_response_length > 0U))
+      (port->response_length > 0U))
   {
-    uint32_t response_length = tactileSensor.current_response_length;
-
-    if (response_length > 0xFFFFU)
-    {
-      response_length = 0xFFFFU;
-    }
-    tactileSensor.last_response_length = (uint16_t)response_length;
-    if (response_length < TACTILE_SENSOR_FRAME_SIZE)
-    {
-      tactileSensor.short_response_count++;
-      tactileSensor.last_short_response_length = (uint16_t)response_length;
-    }
-    /* 每次请求对应一个IDLE响应，错误响应不跨边界拼接到下一个地址。 */
-    tactileSensor.sync_drop_count += tactileSensor.assemble_length;
-    tactileSensor.assemble_length = 0U;
-    tactileSensor.current_response_length = 0U;
-    tactileSensor.response_count++;
+    TactileSensor_FinalizeResponse(port);
   }
 }
 
-void TactileSensor_ErrorCallback(UART_HandleTypeDef *huart)
+void TactileSensor_ErrorCallback(UART_HandleTypeDef *uart)
 {
-  if ((tactileSensor.uart != NULL) && (huart == tactileSensor.uart))
+  TactilePortContext_t *port = TactileSensor_FindPort(uart);
+
+  if (port != NULL)
   {
-    tactileSensor.uart_error_count++;
-    tactileSensor.restart_pending = 1U;
+    port->uart_error_count++;
+    port->restart_pending = 1U;
   }
 }
 
@@ -610,10 +743,13 @@ static void TactileSensor_Task(void *argument)
     (TACTILE_STATS_PERIOD_MS * tick_frequency) / 1000U;
   uint32_t next = osKernelGetTickCount();
   uint32_t stats_tick = next;
-  uint32_t stats_last_frames = 0U;
-  uint32_t stats_last_valid[TACTILE_SENSOR_ADDRESS_COUNT] = {0U};
-  uint32_t stats_last_triggers[TACTILE_SENSOR_ADDRESS_COUNT] = {0U};
-  uint32_t stats_last_bytes = 0U;
+  uint32_t last_valid[TACTILE_SENSOR_PORT_COUNT]
+                     [TACTILE_SENSOR_ADDRESS_COUNT] = {{0U}};
+  uint32_t last_triggers[TACTILE_SENSOR_PORT_COUNT]
+                        [TACTILE_SENSOR_ADDRESS_COUNT] = {{0U}};
+  uint32_t last_bytes[TACTILE_SENSOR_PORT_COUNT] = {0U};
+  uint32_t last_snapshot = 0U;
+  uint32_t port_index;
   (void)argument;
 
   if (period_ticks == 0U)
@@ -629,48 +765,55 @@ static void TactileSensor_Task(void *argument)
     stats_ticks = 1U;
   }
 
-  if (!TactileSensor_RestartReceive())
+  for (port_index = 0U;
+       port_index < TACTILE_SENSOR_PORT_COUNT;
+       port_index++)
   {
-    tactileSensor.restart_pending = 1U;
+    if (!TactileSensor_RestartReceive(&tactilePorts[port_index]))
+    {
+      tactilePorts[port_index].restart_pending = 1U;
+    }
   }
   TactileSensor_Write(
-    "TACTILE,TASK,start,uart=2,addr=0x36/0x37,rate=40Hz\r\n");
+    "TACTILE,TASK,start,uart=1/2,addr=0x36/0x37,rate=40Hz\r\n");
 
   for (;;)
   {
     uint32_t now;
-    uint32_t previous_response;
 
-    if (tactileSensor.restart_pending != 0U)
+    for (port_index = 0U;
+         port_index < TACTILE_SENSOR_PORT_COUNT;
+         port_index++)
     {
-      tactileSensor.restart_pending = 0U;
-      if (TactileSensor_RestartReceive())
+      TactilePortContext_t *port = &tactilePorts[port_index];
+
+      if (port->restart_pending != 0U)
       {
-        tactileSensor.restart_count++;
-      }
-      else
-      {
-        tactileSensor.restart_pending = 1U;
+        port->restart_pending = 0U;
+        if (TactileSensor_RestartReceive(port))
+        {
+          port->restart_count++;
+        }
+        else
+        {
+          port->restart_pending = 1U;
+        }
       }
     }
 
-    previous_response = tactileSensor.response_count;
-    TactileSensor_SendRequest(TACTILE_SENSOR_ADDRESS_36);
-    TactileSensor_WaitForResponse(previous_response, timeout_ticks);
+    TactileDataStore_BeginCycle();
+    TactileSensor_RequestAddress(TACTILE_SENSOR_ADDRESS_36, timeout_ticks);
+    TactileSensor_RequestAddress(TACTILE_SENSOR_ADDRESS_37, timeout_ticks);
 
-    previous_response = tactileSensor.response_count;
-    TactileSensor_SendRequest(TACTILE_SENSOR_ADDRESS_37);
-    TactileSensor_WaitForResponse(previous_response, timeout_ticks);
     now = osKernelGetTickCount();
     if ((now - stats_tick) >= stats_ticks)
     {
       uint32_t elapsed = now - stats_tick;
 
       TactileSensor_DumpStats(elapsed, tick_frequency,
-                              &stats_last_frames,
-                              stats_last_valid,
-                              stats_last_triggers,
-                              &stats_last_bytes);
+                              last_valid, last_triggers, last_bytes,
+                              &last_snapshot);
+      TactileSensor_DumpForce();
       stats_tick = now;
     }
 
@@ -688,7 +831,7 @@ void TactileSensor_CreateTask(void)
 {
   const osThreadAttr_t attributes = {
     .name = "tactileSensor",
-    .stack_size = 1024U * 4U,
+    .stack_size = 1536U * 4U,
     .priority = osPriorityBelowNormal
   };
 
@@ -703,7 +846,7 @@ void TactileSensor_CreateTask(void)
   }
 }
 
-void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *uart, uint16_t size)
 {
-  TactileSensor_RxEventCallback(huart, size);
+  TactileSensor_RxEventCallback(uart, size);
 }
