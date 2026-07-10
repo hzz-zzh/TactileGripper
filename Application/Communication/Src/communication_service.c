@@ -85,19 +85,25 @@ static void CommunicationService_ProcessControl(
   const CommunicationControlFrame_t *control,
   bool *can_control_active,
   bool *last_sequence_valid,
-  uint8_t *last_sequence)
+  uint8_t *last_sequence,
+  CommunicationControlCommand_t *last_command,
+  int16_t *last_position_permille)
 {
   bool duplicate = false;
 
   if ((control == NULL) || (can_control_active == NULL) ||
-      (last_sequence_valid == NULL) || (last_sequence == NULL))
+      (last_sequence_valid == NULL) || (last_sequence == NULL) ||
+      (last_command == NULL) || (last_position_permille == NULL))
   {
     return;
   }
 
   if (*last_sequence_valid && (control->sequence == *last_sequence) &&
+      (control->command == *last_command) &&
+      (control->position_permille == *last_position_permille) &&
       (control->command != COMMUNICATION_CONTROL_NOP) &&
       (control->command != COMMUNICATION_CONTROL_STOP) &&
+      (control->command != COMMUNICATION_CONTROL_CLEAR_FAULT) &&
       (control->command != COMMUNICATION_CONTROL_STATUS_ONESHOT))
   {
     duplicate = true;
@@ -106,6 +112,8 @@ static void CommunicationService_ProcessControl(
   if ((control->command != COMMUNICATION_CONTROL_NOP) && !duplicate)
   {
     *last_sequence = control->sequence;
+    *last_command = control->command;
+    *last_position_permille = control->position_permille;
     *last_sequence_valid = true;
   }
 
@@ -179,6 +187,8 @@ static void CommunicationService_Task(void *argument)
   uint32_t lastFaults = 0U;
   uint32_t lastMotorFaults = 0U;
   uint8_t lastSequence = 0U;
+  CommunicationControlCommand_t lastCommand = COMMUNICATION_CONTROL_NOP;
+  int16_t lastPositionPermille = 0;
   bool lastSequenceValid = false;
   bool hostSeen = false;
   bool canControlActive = false;
@@ -211,7 +221,9 @@ static void CommunicationService_Task(void *argument)
         CommunicationService_ProcessControl(&control,
                                             &canControlActive,
                                             &lastSequenceValid,
-                                            &lastSequence);
+                                            &lastSequence,
+                                            &lastCommand,
+                                            &lastPositionPermille);
       }
     }
 

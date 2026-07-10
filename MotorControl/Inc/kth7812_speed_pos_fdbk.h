@@ -52,6 +52,7 @@ extern KTH7812_Handle_t KTH7812_M1;
 void KTH7812_Init(KTH7812_Handle_t *handle, SPI_HandleTypeDef *spi,
                   GPIO_TypeDef *nss_port, uint16_t nss_pin);
 void KTH7812_Clear(KTH7812_Handle_t *handle);
+void KTH7812_ClearSpeed(KTH7812_Handle_t *handle);
 KTH7812_Status_t KTH7812_Update(KTH7812_Handle_t *handle);
 bool KTH7812_CalcAvrgMecSpeedUnit(KTH7812_Handle_t *handle, int16_t *speed_unit);
 void KTH7812_SetElectricalOffset(KTH7812_Handle_t *handle, int16_t offset);

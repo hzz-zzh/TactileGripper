@@ -258,7 +258,8 @@ __weak void TSK_MediumFrequencyTaskM1(void)
               FOCVars[M1].bDriveInput = EXTERNAL;
               STC_SetSpeedSensor( pSTC[M1], &VirtualSpeedSensorM1._Super );
 
-              KTH7812_Clear(&KTH7812_M1);
+              /* 对齐前清除速度历史，但不能破坏夹爪保存的多圈位置坐标。 */
+              KTH7812_ClearSpeed(&KTH7812_M1);
 
               FOC_Clear( M1 );
               VSS_SetMecAcceleration(&VirtualSpeedSensorM1, 0, 0U);
@@ -383,7 +384,8 @@ __weak void TSK_MediumFrequencyTaskM1(void)
           {
             if (TSK_StopPermanencyTimeHasElapsedM1())
             {
-              KTH7812_Clear(&KTH7812_M1);
+              /* 切回绝对编码器后重新建立速度滤波，位置计数保持连续。 */
+              KTH7812_ClearSpeed(&KTH7812_M1);
               R3_2_SwitchOnPWM(pwmcHandle[M1]);
               FOC_InitAdditionalMethods(M1);
               STC_ForceSpeedReferenceToCurrentSpeed(pSTC[M1]); /* Init the reference speed to current speed */

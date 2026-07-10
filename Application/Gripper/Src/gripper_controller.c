@@ -174,8 +174,8 @@ bool GripperController_SetPosition(GripperController_t *controller,
                                    int16_t position_permille)
 {
   if ((controller == NULL) || !controller->homed ||
-      (controller->state == GRIPPER_STATE_FAULT) ||
-      (controller->state == GRIPPER_STATE_STOPPED))
+      (controller->faults != GRIPPER_FAULT_NONE) ||
+      (controller->state == GRIPPER_STATE_FAULT))
   {
     return false;
   }
@@ -199,13 +199,18 @@ void GripperController_Stop(GripperController_t *controller)
 bool GripperController_ClearFaults(GripperController_t *controller,
                                    bool motor_fault_cleared)
 {
+  bool preserve_homing;
+
   if ((controller == NULL) || !motor_fault_cleared)
   {
     return false;
   }
 
+  /* 纯通信故障不影响机械零点，其他故障清除后必须重新回零。 */
+  preserve_homing = controller->homed &&
+    ((controller->faults & ~GRIPPER_FAULT_COMMUNICATION) == 0U);
   controller->faults = GRIPPER_FAULT_NONE;
-  controller->homed = false;
+  controller->homed = preserve_homing;
   GripperController_EnterState(controller, GRIPPER_STATE_STOPPED);
   return true;
 }
@@ -218,7 +223,13 @@ void GripperController_LatchExternalFault(GripperController_t *controller,
     return;
   }
 
-  GripperController_LatchFault(controller, fault);
+  controller->faults |= fault;
+  /* CAN超时只停止运动，不破坏已经完成的夹爪行程标定。 */
+  if ((controller->faults & ~GRIPPER_FAULT_COMMUNICATION) != 0U)
+  {
+    controller->homed = false;
+  }
+  GripperController_EnterState(controller, GRIPPER_STATE_FAULT);
 }
 
 GripperControllerOutput_t GripperController_Update(
@@ -342,23 +353,38 @@ GripperControllerOutput_t GripperController_Update(
 
     case GRIPPER_STATE_MOVING_SAFE:
     case GRIPPER_STATE_MOVING:
-      output.speed_ref_rpm = GripperController_RunPositionLoop(
-        controller, feedback, &targetReached);
-      if (targetReached)
+      if (feedback->motor_idle)
       {
-        GripperController_EnterState(controller,
-                                     (controller->state ==
-                                      GRIPPER_STATE_MOVING_SAFE) ?
-                                     GRIPPER_STATE_READY :
-                                     GRIPPER_STATE_HOLDING);
+        /* STOP或通信故障恢复后，首条位置指令负责重新启动电机。 */
+        output.start_motor = true;
+      }
+      else if (feedback->motor_running)
+      {
+        output.speed_ref_rpm = GripperController_RunPositionLoop(
+          controller, feedback, &targetReached);
+        if (targetReached)
+        {
+          GripperController_EnterState(controller,
+                                       (controller->state ==
+                                        GRIPPER_STATE_MOVING_SAFE) ?
+                                       GRIPPER_STATE_READY :
+                                       GRIPPER_STATE_HOLDING);
+        }
       }
       break;
 
     case GRIPPER_STATE_READY:
     case GRIPPER_STATE_HOLDING:
-      /* 保持状态仍运行位置外环，外力造成偏移时自动回到目标位置。 */
-      output.speed_ref_rpm = GripperController_RunPositionLoop(
-        controller, feedback, &targetReached);
+      if (feedback->motor_idle)
+      {
+        output.start_motor = true;
+      }
+      else if (feedback->motor_running)
+      {
+        /* 保持状态仍运行位置外环，外力造成偏移时自动回到目标位置。 */
+        output.speed_ref_rpm = GripperController_RunPositionLoop(
+          controller, feedback, &targetReached);
+      }
       break;
 
     case GRIPPER_STATE_STOPPED:

@@ -96,6 +96,14 @@ void KTH7812_Init(KTH7812_Handle_t *handle, SPI_HandleTypeDef *spi,
 void KTH7812_Clear(KTH7812_Handle_t *handle)
 {
   handle->multi_turn_count = (int32_t)handle->raw_angle;
+  handle->_Super.hMecAngle = (int16_t)handle->multi_turn_count;
+  handle->_Super.wMecAngle = handle->multi_turn_count;
+  KTH7812_ClearSpeed(handle);
+}
+
+void KTH7812_ClearSpeed(KTH7812_Handle_t *handle)
+{
+  /* 电机重新启动时只清速度估算，保留回零标定使用的多圈位置坐标。 */
   handle->speed_sample_count = handle->multi_turn_count;
   handle->speed_filter_sum = 0;
   handle->speed_filter_index = 0U;
