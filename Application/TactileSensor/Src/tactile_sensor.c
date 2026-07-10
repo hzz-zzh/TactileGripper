@@ -15,6 +15,7 @@
 #define TACTILE_SAMPLE_PERIOD_MS            25U
 #define TACTILE_RESPONSE_TIMEOUT_MS         5U
 #define TACTILE_STATS_PERIOD_MS             2000U
+#define TACTILE_STATS_OUTPUT_ENABLE         0U
 #define TACTILE_TX_TIMEOUT_MS               2U
 #define TACTILE_DEBUG_TIMEOUT_MS            10U
 #define TACTILE_DMA_BUFFER_SIZE             512U
@@ -368,6 +369,7 @@ static void TactileSensor_RequestAddress(uint8_t address,
   }
 }
 
+#if TACTILE_STATS_OUTPUT_ENABLE
 static uint32_t TactileSensor_Rate10(uint32_t delta,
                                      uint32_t elapsed,
                                      uint32_t tick_frequency)
@@ -378,6 +380,7 @@ static uint32_t TactileSensor_Rate10(uint32_t delta,
   }
   return (uint32_t)(((uint64_t)delta * tick_frequency * 10ULL) / elapsed);
 }
+#endif
 
 static void TactileSensor_FormatForce(float force_n,
                                       char *text,
@@ -404,11 +407,11 @@ static void TactileSensor_FormatForce(float force_n,
                  (unsigned long)(magnitude % 1000U));
 }
 
-static void TactileSensor_DumpForce(void)
+static void TactileSensor_DumpForceAndProximity(void)
 {
   gripper_tactile_data_t data;
   char force_text[8][16];
-  char line[320];
+  char line[512];
 
   if (!TactileDataStore_GetLatest(&data))
   {
@@ -451,15 +454,32 @@ static void TactileSensor_DumpForce(void)
 
   (void)snprintf(
     line, sizeof(line),
-    "TACTILE,FORCE,seq=%lu,L36,N=%s,T=%s,L37,N=%s,T=%s,R36,N=%s,T=%s,R37,N=%s,T=%s\r\n",
+    "TACTILE,FORCE,seq=%lu,L36,N=%s,T=%s,P=%lu,PD=%ld,L37,N=%s,T=%s,P=%lu,PD=%ld,R36,N=%s,T=%s,P=%lu,PD=%ld,R37,N=%s,T=%s,P=%lu,PD=%ld\r\n",
     (unsigned long)data.sequence,
     force_text[0], force_text[1],
+    (unsigned long)data.finger[TACTILE_FINGER_LEFT]
+                       .unit[TACTILE_UNIT_LOWER].proximity_raw,
+    (long)data.finger[TACTILE_FINGER_LEFT]
+              .unit[TACTILE_UNIT_LOWER].proximity_delta,
     force_text[2], force_text[3],
+    (unsigned long)data.finger[TACTILE_FINGER_LEFT]
+                       .unit[TACTILE_UNIT_UPPER].proximity_raw,
+    (long)data.finger[TACTILE_FINGER_LEFT]
+              .unit[TACTILE_UNIT_UPPER].proximity_delta,
     force_text[4], force_text[5],
-    force_text[6], force_text[7]);
+    (unsigned long)data.finger[TACTILE_FINGER_RIGHT]
+                       .unit[TACTILE_UNIT_LOWER].proximity_raw,
+    (long)data.finger[TACTILE_FINGER_RIGHT]
+              .unit[TACTILE_UNIT_LOWER].proximity_delta,
+    force_text[6], force_text[7],
+    (unsigned long)data.finger[TACTILE_FINGER_RIGHT]
+                       .unit[TACTILE_UNIT_UPPER].proximity_raw,
+    (long)data.finger[TACTILE_FINGER_RIGHT]
+              .unit[TACTILE_UNIT_UPPER].proximity_delta);
   TactileSensor_Write(line);
 }
 
+#if TACTILE_STATS_OUTPUT_ENABLE
 static void TactileSensor_DumpStats(
   uint32_t elapsed,
   uint32_t tick_frequency,
@@ -586,6 +606,7 @@ static void TactileSensor_DumpStats(
                   .response_overflow_count);
   TactileSensor_Write(line);
 }
+#endif
 
 void TactileSensor_Init(UART_HandleTypeDef *uart1,
                         UART_HandleTypeDef *uart2)
@@ -746,9 +767,12 @@ static void TactileSensor_Task(void *argument)
     (TACTILE_SAMPLE_PERIOD_MS * tick_frequency) / 1000U;
   uint32_t timeout_ticks =
     (TACTILE_RESPONSE_TIMEOUT_MS * tick_frequency) / 1000U;
+#if TACTILE_STATS_OUTPUT_ENABLE
   uint32_t stats_ticks =
     (TACTILE_STATS_PERIOD_MS * tick_frequency) / 1000U;
+#endif
   uint32_t next = osKernelGetTickCount();
+#if TACTILE_STATS_OUTPUT_ENABLE
   uint32_t stats_tick = next;
   uint32_t last_valid[TACTILE_SENSOR_PORT_COUNT]
                      [TACTILE_SENSOR_ADDRESS_COUNT] = {{0U}};
@@ -756,6 +780,7 @@ static void TactileSensor_Task(void *argument)
                         [TACTILE_SENSOR_ADDRESS_COUNT] = {{0U}};
   uint32_t last_bytes[TACTILE_SENSOR_PORT_COUNT] = {0U};
   uint32_t last_snapshot = 0U;
+#endif
   uint32_t port_index;
   (void)argument;
 
@@ -767,10 +792,12 @@ static void TactileSensor_Task(void *argument)
   {
     timeout_ticks = 1U;
   }
+#if TACTILE_STATS_OUTPUT_ENABLE
   if (stats_ticks == 0U)
   {
     stats_ticks = 1U;
   }
+#endif
 
   for (port_index = 0U;
        port_index < TACTILE_SENSOR_PORT_COUNT;
@@ -812,8 +839,11 @@ static void TactileSensor_Task(void *argument)
     TactileDataStore_BeginCycle();
     TactileSensor_RequestAddress(TACTILE_SENSOR_ADDRESS_36, timeout_ticks);
     TactileSensor_RequestAddress(TACTILE_SENSOR_ADDRESS_37, timeout_ticks);
+    /* 每轮四单元采样完成后输出力和接近觉，频率与40Hz采样频率一致。 */
+    TactileSensor_DumpForceAndProximity();
 
     now = osKernelGetTickCount();
+#if TACTILE_STATS_OUTPUT_ENABLE
     if ((now - stats_tick) >= stats_ticks)
     {
       uint32_t elapsed = now - stats_tick;
@@ -821,9 +851,9 @@ static void TactileSensor_Task(void *argument)
       TactileSensor_DumpStats(elapsed, tick_frequency,
                               last_valid, last_triggers, last_bytes,
                               &last_snapshot);
-      TactileSensor_DumpForce();
       stats_tick = now;
     }
+#endif
 
     next += period_ticks;
     now = osKernelGetTickCount();
