@@ -11,7 +11,9 @@
 
 static gripper_tactile_data_t tactileWorkingData;
 static gripper_tactile_data_t tactilePublishedData;
+/* 发布版本用于无锁读取：奇数表示ISR正在复制快照，偶数表示稳定。 */
 static volatile uint32_t tactilePublishVersion;
+/* 每个采样周期内四个单元的有效位，全部到齐后才发布完整快照。 */
 static volatile uint8_t tactileCycleValidMask;
 
 static uint8_t TactileDataStore_UnitMask(tactile_finger_id_t finger,
@@ -50,6 +52,7 @@ void TactileDataStore_Init(void)
 
 void TactileDataStore_BeginCycle(void)
 {
+  /* USART回调可能同时更新有效位，清零时需要短暂屏蔽相关中断。 */
   taskENTER_CRITICAL();
   tactileCycleValidMask = 0U;
   taskEXIT_CRITICAL();
@@ -102,6 +105,7 @@ bool TactileDataStore_GetLatest(gripper_tactile_data_t *data)
 
   for (;;)
   {
+    /* 复制前后版本一致，才能保证没有读到一半新、一半旧的数据。 */
     version_before = tactilePublishVersion;
     if ((version_before & 1U) != 0U)
     {

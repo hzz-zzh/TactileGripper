@@ -23,6 +23,7 @@ typedef enum
 
 bool TactileProtocol_IsAddress(uint8_t address);
 void TactileProtocol_BuildReadCommand(uint8_t address, uint8_t command[2]);
+/* 校验并解析一个完整96字节响应，输出单位已经转换后的单元数据。 */
 tactile_protocol_result_t TactileProtocol_DecodeFrame(
   uint8_t expected_address,
   const uint8_t *frame,

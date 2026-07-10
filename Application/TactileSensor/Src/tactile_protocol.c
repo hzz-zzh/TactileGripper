@@ -2,6 +2,11 @@
 
 #include <string.h>
 
+/*
+ * 96字节响应帧布局：
+ * 0~5帧头及状态，6~80为25个触点，81~83为接近觉原始值，
+ * 84~89为力和方向，90~92为接近觉差值，93为状态，94~95为校验和。
+ */
 #define TACTILE_HEADER0                    0x55U
 #define TACTILE_HEADER1                    0xAAU
 #define TACTILE_DATA_COMMAND               0x85U
@@ -14,7 +19,7 @@
 #define TACTILE_TANGENTIAL_FORCE_OFFSET    86U
 #define TACTILE_TANGENTIAL_ANGLE_OFFSET    88U
 #define TACTILE_PROXIMITY_DELTA_OFFSET     90U
-#define TACTILE_FORCE_SCALE                1000.0f
+#define TACTILE_FORCE_SCALE                100.0f
 
 static uint16_t TactileProtocol_ReadLe16(const uint8_t *data)
 {
@@ -114,6 +119,7 @@ tactile_protocol_result_t TactileProtocol_DecodeFrame(
   data->proximity_delta =
     (int32_t)TactileProtocol_ReadLe24(
       &frame[TACTILE_PROXIMITY_DELTA_OFFSET]);
+  /* 厂商力数据为有符号mN，除以1000后按N保存。 */
   data->normal_force_n =
     (float)(int16_t)TactileProtocol_ReadLe16(
       &frame[TACTILE_NORMAL_FORCE_OFFSET]) / TACTILE_FORCE_SCALE;
@@ -123,6 +129,7 @@ tactile_protocol_result_t TactileProtocol_DecodeFrame(
 
   direction = TactileProtocol_ReadLe16(
     &frame[TACTILE_TANGENTIAL_ANGLE_OFFSET]);
+  /* 无接触时厂商通常返回0xFFFF，统一转换为结构体约定的无效值。 */
   data->tangential_direction_deg =
     (direction <= 359U) ? direction : TACTILE_DIRECTION_INVALID_DEG;
   data->valid_mask = TACTILE_UNIT_DATA_VALID_TAXEL |

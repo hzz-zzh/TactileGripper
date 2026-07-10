@@ -30,6 +30,7 @@
 #error "Tactile sensor API and protocol constants must match"
 #endif
 
+/* 每个UART拥有独立的DMA位置、响应缓存和错误计数。 */
 typedef struct
 {
   UART_HandleTypeDef *uart;
@@ -152,6 +153,7 @@ static void TactileSensor_FinalizeResponse(TactilePortContext_t *port)
   uint32_t address_index;
   uint32_t port_index;
 
+  /* IDLE表示本次传感器响应结束，长度不是96时直接丢弃，不跨请求拼帧。 */
   port->last_response_length = (port->response_length > 0xFFFFU) ?
     0xFFFFU : (uint16_t)port->response_length;
   if (port->response_length != TACTILE_SENSOR_FRAME_SIZE)
@@ -188,6 +190,7 @@ static void TactileSensor_FinalizeResponse(TactilePortContext_t *port)
          TACTILE_SENSOR_FRAME_SIZE);
   port->valid_frame_count[address_index]++;
 
+  /* USART1映射左指、USART2映射右指；0x37为上单元、0x36为下单元。 */
   port_index = TactileSensor_PortIndex(port);
   TactileDataStore_UpdateUnit(
     TactileSensor_PortFinger(port_index),
@@ -210,6 +213,7 @@ static void TactileSensor_AppendRxBytes(TactilePortContext_t *port,
     return;
   }
 
+  /* DMA TC和IDLE可能分多次上报同一响应，这里只负责顺序追加。 */
   free_length = (port->response_length < TACTILE_SENSOR_FRAME_SIZE) ?
     (uint16_t)(TACTILE_SENSOR_FRAME_SIZE - port->response_length) : 0U;
   copy_length = (length <= free_length) ? length : free_length;
@@ -317,6 +321,7 @@ static void TactileSensor_RequestAddress(uint8_t address,
   uint32_t start;
   uint32_t port_index;
 
+  /* 两个UART先并行发出同一地址请求，再共同等待各自的IDLE响应。 */
   for (port_index = 0U;
        port_index < TACTILE_SENSOR_PORT_COUNT;
        port_index++)
@@ -410,6 +415,7 @@ static void TactileSensor_DumpForce(void)
     return;
   }
 
+  /* 输出顺序与数据结构映射一致：左/右指内均先0x36、后0x37。 */
   TactileSensor_FormatForce(
     data.finger[TACTILE_FINGER_LEFT]
         .unit[TACTILE_UNIT_LOWER].normal_force_n,
@@ -674,6 +680,7 @@ void TactileSensor_RxEventCallback(UART_HandleTypeDef *uart, uint16_t size)
   event_type = HAL_UARTEx_GetRxEventType(uart);
   previous_position = port->dma_read_position;
   current_position = size;
+  /* HAL回调给出循环DMA当前写位置，需要分别处理尾部、前部和整圈边界。 */
   if (current_position == TACTILE_DMA_BUFFER_SIZE)
   {
     current_position = 0U;
@@ -801,6 +808,7 @@ static void TactileSensor_Task(void *argument)
       }
     }
 
+    /* 每25ms启动一轮四单元采样，只有四帧均有效才生成新快照。 */
     TactileDataStore_BeginCycle();
     TactileSensor_RequestAddress(TACTILE_SENSOR_ADDRESS_36, timeout_ticks);
     TactileSensor_RequestAddress(TACTILE_SENSOR_ADDRESS_37, timeout_ticks);
