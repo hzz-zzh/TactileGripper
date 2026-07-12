@@ -80,7 +80,8 @@ void TactileDataStore_UpdateUnit(tactile_finger_id_t finger,
   }
 
   tactileWorkingData.sequence = tactilePublishedData.sequence + 1U;
-  tactileWorkingData.timestamp_us = HAL_GetTick() * 1000U;
+  /* 四个触觉单元全部到齐时记录完整快照的毫秒时间戳。 */
+  tactileWorkingData.timestamp_ms = HAL_GetTick();
 
   /* 奇数版本表示正在发布，读取方会在复制后再次核对版本。 */
   tactilePublishVersion++;

@@ -186,11 +186,11 @@ typedef struct
     uint32_t sequence;
 
     /**
-     * @brief 触觉帧时间戳，单位 us。
+     * @brief 触觉帧时间戳，单位 ms。
      *
      * 用于计算 dt、力变化率、接触中心速度等。
      */
-    uint32_t timestamp_us;
+    uint32_t timestamp_ms;
 
 } gripper_tactile_data_t;
 

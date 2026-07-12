@@ -454,8 +454,9 @@ static void TactileSensor_DumpForceAndProximity(void)
 
   (void)snprintf(
     line, sizeof(line),
-    "TACTILE,FORCE,seq=%lu,L36,N=%s,T=%s,P=%lu,PD=%ld,L37,N=%s,T=%s,P=%lu,PD=%ld,R36,N=%s,T=%s,P=%lu,PD=%ld,R37,N=%s,T=%s,P=%lu,PD=%ld\r\n",
+    "TACTILE,FORCE,seq=%lu,ts=%lu,L36,N=%s,T=%s,P=%lu,PD=%ld,L37,N=%s,T=%s,P=%lu,PD=%ld,R36,N=%s,T=%s,P=%lu,PD=%ld,R37,N=%s,T=%s,P=%lu,PD=%ld\r\n",
     (unsigned long)data.sequence,
+    (unsigned long)data.timestamp_ms,
     force_text[0], force_text[1],
     (unsigned long)data.finger[TACTILE_FINGER_LEFT]
                        .unit[TACTILE_UNIT_LOWER].proximity_raw,
