@@ -18,7 +18,7 @@
           <Vendor>STMicroelectronics</Vendor>
           <PackID>Keil.STM32H7xx_DFP.3.1.1</PackID>
           <PackURL>https://www.keil.com/pack/</PackURL>
-          <Cpu>IRAM(0x20000000-0x2001FFFF) IRAM2(0x24000100-0x2404FFFF) IROM(0x8000000-0x80FFFFF) CLOCK(12000000) FPU3(DFPU) CPUTYPE("Cortex-M7") ELITTLE TZ</Cpu>
+          <Cpu>IRAM(0x20000000-0x2001FFFF) IRAM2(0x24000500-0x2404FFFF) IROM(0x8000000-0x80FFFFF) CLOCK(12000000) FPU3(DFPU) CPUTYPE("Cortex-M7") ELITTLE TZ</Cpu>
           <FlashUtilSpec></FlashUtilSpec>
           <StartupFile></StartupFile>
           <FlashDriverDll></FlashDriverDll>
@@ -81,7 +81,7 @@
           </BeforeMake>
           <AfterMake>
             <RunUserProg1>0</RunUserProg1>
-            <RunUserProg2>1</RunUserProg2>
+            <RunUserProg2>0</RunUserProg2>
             <UserProg1Name></UserProg1Name>
             <UserProg2Name></UserProg2Name>
             <UserProg1Dos16Mode>0</UserProg1Dos16Mode>
@@ -305,8 +305,8 @@
               </OCR_RVCT9>
               <OCR_RVCT10>
                 <Type>0</Type>
-                <StartAddress>0x24000100</StartAddress>
-                <Size>0x4ff00</Size>
+                <StartAddress>0x24000500</StartAddress>
+                <Size>0x4fb00</Size>
               </OCR_RVCT10>
             </OnChipMemories>
             <RvctStartVector></RvctStartVector>
@@ -339,7 +339,7 @@
               <MiscControls></MiscControls>
               <Define>USE_PWR_LDO_SUPPLY,USE_HAL_DRIVER,STM32H723xx,ARM_MATH_CM7</Define>
               <Undefine></Undefine>
-              <IncludePath>../Core/Inc;../MotorControl/Inc;../Application/Gripper/Inc;../Application/Communication/Inc;../Application/StatusIndicator/Inc;../Platform/Inc;../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/Any/Inc;../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/H7xx/Inc;../Drivers/CMSIS/DSP/Include;../Drivers/STM32H7xx_HAL_Driver/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy;../Middlewares/Third_Party/FreeRTOS/Source/include;../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2;../Middlewares/Third_Party/FreeRTOS/Source/portable/RVDS/ARM_CM4F;../Drivers/CMSIS/RTOS2/Include;../Drivers/CMSIS/Device/ST/STM32H7xx/Include;../Drivers/CMSIS/Include</IncludePath>
+              <IncludePath>../Core/Inc;../MotorControl/Inc;../Application/Gripper/Inc;../Application/Communication/Inc;../Application/StatusIndicator/Inc;../Application/TactileSensor/Inc;../Platform/Inc;../Drivers/CMSIS/DSP/Include;../Drivers/STM32H7xx_HAL_Driver/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy;../Middlewares/Third_Party/FreeRTOS/Source/include;../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2;../Middlewares/Third_Party/FreeRTOS/Source/portable/RVDS/ARM_CM4F;../Drivers/CMSIS/RTOS2/Include;../Drivers/CMSIS/Device/ST/STM32H7xx/Include;../Drivers/CMSIS/Include;..\MCSDK_v6.4.1-Full\MotorControl\MCSDK\MCLib\Any\Inc;..\MCSDK_v6.4.1-Full\MotorControl\MCSDK\MCLib\H7xx\Inc</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -357,7 +357,7 @@
               <MiscControls></MiscControls>
               <Define></Define>
               <Undefine></Undefine>
-              <IncludePath>../Core/Inc;../MotorControl/Inc;../Application/Gripper/Inc;../Application/Communication/Inc;../Application/StatusIndicator/Inc;../Platform/Inc;../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/Any/Inc;../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/H7xx/Inc;../Drivers/CMSIS/DSP/Include;../Drivers/STM32H7xx_HAL_Driver/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy;../Middlewares/Third_Party/FreeRTOS/Source/include;../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2;../Middlewares/Third_Party/FreeRTOS/Source/portable/RVDS/ARM_CM4F;../Drivers/CMSIS/RTOS2/Include;../Drivers/CMSIS/Device/ST/STM32H7xx/Include;../Drivers/CMSIS/Include</IncludePath>
+              <IncludePath>../Core/Inc;../MotorControl/Inc;../Application/Gripper/Inc;../Application/Communication/Inc;../Application/StatusIndicator/Inc;../Application/TactileSensor/Inc;../Platform/Inc;../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/Any/Inc;../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/H7xx/Inc;../Drivers/CMSIS/DSP/Include;../Drivers/STM32H7xx_HAL_Driver/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy;../Middlewares/Third_Party/FreeRTOS/Source/include;../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2;../Middlewares/Third_Party/FreeRTOS/Source/portable/RVDS/ARM_CM4F;../Drivers/CMSIS/RTOS2/Include;../Drivers/CMSIS/Device/ST/STM32H7xx/Include;../Drivers/CMSIS/Include</IncludePath>
             </VariousControls>
           </Aads>
           <LDads>
@@ -796,6 +796,26 @@
           </Files>
         </Group>
         <Group>
+          <GroupName>Application/TactileSensor</GroupName>
+          <Files>
+            <File>
+              <FileName>tactile_sensor.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Application/TactileSensor/Src/tactile_sensor.c</FilePath>
+            </File>
+            <File>
+              <FileName>tactile_protocol.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Application/TactileSensor/Src/tactile_protocol.c</FilePath>
+            </File>
+            <File>
+              <FileName>tactile_data_store.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Application/TactileSensor/Src/tactile_data_store.c</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
           <GroupName>Platform</GroupName>
           <Files>
             <File>
@@ -821,62 +841,62 @@
             <File>
               <FileName>bus_voltage_sensor.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/Any/Src/bus_voltage_sensor.c</FilePath>
+              <FilePath>..\MCSDK_v6.4.1-Full\MotorControl\MCSDK\MCLib\Any\Src\bus_voltage_sensor.c</FilePath>
             </File>
             <File>
               <FileName>circle_limitation.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/Any/Src/circle_limitation.c</FilePath>
+              <FilePath>..\MCSDK_v6.4.1-Full\MotorControl\MCSDK\MCLib\Any\Src\circle_limitation.c</FilePath>
             </File>
             <File>
               <FileName>digital_output.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/Any/Src/digital_output.c</FilePath>
+              <FilePath>..\MCSDK_v6.4.1-Full\MotorControl\MCSDK\MCLib\Any\Src\digital_output.c</FilePath>
             </File>
             <File>
               <FileName>ntc_temperature_sensor.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/Any/Src/ntc_temperature_sensor.c</FilePath>
+              <FilePath>..\MCSDK_v6.4.1-Full\MotorControl\MCSDK\MCLib\Any\Src\ntc_temperature_sensor.c</FilePath>
             </File>
             <File>
               <FileName>pid_regulator.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/Any/Src/pid_regulator.c</FilePath>
+              <FilePath>..\MCSDK_v6.4.1-Full\MotorControl\MCSDK\MCLib\Any\Src\pid_regulator.c</FilePath>
             </File>
             <File>
               <FileName>pqd_motor_power_measurement.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/Any/Src/pqd_motor_power_measurement.c</FilePath>
+              <FilePath>..\MCSDK_v6.4.1-Full\MotorControl\MCSDK\MCLib\Any\Src\pqd_motor_power_measurement.c</FilePath>
             </File>
             <File>
               <FileName>r_divider_bus_voltage_sensor.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/Any/Src/r_divider_bus_voltage_sensor.c</FilePath>
+              <FilePath>..\MCSDK_v6.4.1-Full\MotorControl\MCSDK\MCLib\Any\Src\r_divider_bus_voltage_sensor.c</FilePath>
             </File>
             <File>
               <FileName>ramp_ext_mngr.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/Any/Src/ramp_ext_mngr.c</FilePath>
+              <FilePath>..\MCSDK_v6.4.1-Full\MotorControl\MCSDK\MCLib\Any\Src\ramp_ext_mngr.c</FilePath>
             </File>
             <File>
               <FileName>speed_pos_fdbk.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/Any/Src/speed_pos_fdbk.c</FilePath>
+              <FilePath>..\MCSDK_v6.4.1-Full\MotorControl\MCSDK\MCLib\Any\Src\speed_pos_fdbk.c</FilePath>
             </File>
             <File>
               <FileName>virtual_speed_sensor.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/Any/Src/virtual_speed_sensor.c</FilePath>
+              <FilePath>..\MCSDK_v6.4.1-Full\MotorControl\MCSDK\MCLib\Any\Src\virtual_speed_sensor.c</FilePath>
             </File>
             <File>
               <FileName>mcpa.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/Any/Src/mcpa.c</FilePath>
+              <FilePath>..\MCSDK_v6.4.1-Full\MotorControl\MCSDK\MCLib\Any\Src\mcpa.c</FilePath>
             </File>
             <File>
               <FileName>r3_2_h7xx_pwm_curr_fdbk.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/H7xx/Src/r3_2_h7xx_pwm_curr_fdbk.c</FilePath>
+              <FilePath>..\MCSDK_v6.4.1-Full\MotorControl\MCSDK\MCLib\H7xx\Src\r3_2_h7xx_pwm_curr_fdbk.c</FilePath>
             </File>
           </Files>
         </Group>

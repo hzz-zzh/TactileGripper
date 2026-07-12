@@ -1277,19 +1277,19 @@ Command Line: --debug --xref --diag_suppress=9931 --cpu=Cortex-M7.fp.dp --apcs=
 interwork --depend=tactilegripper_h723vgh6\startup_stm32h723xx.d -otactilegripp
 er_h723vgh6\startup_stm32h723xx.o -I../Core/Inc -I../MotorControl/Inc -I../Appl
 ication/Gripper/Inc -I../Application/Communication/Inc -I../Application/StatusI
-ndicator/Inc -I../Platform/Inc -I../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1-Ful
-l/MotorControl/MCSDK/MCLib/Any/Inc -I../../Reference/H745_MCSDK_OS/MCSDK_v6.4.1
--Full/MotorControl/MCSDK/MCLib/H7xx/Inc -I../Drivers/CMSIS/DSP/Include -I../Dri
-vers/STM32H7xx_HAL_Driver/Inc -I../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy -I..
-/Middlewares/Third_Party/FreeRTOS/Source/include -I../Middlewares/Third_Party/F
-reeRTOS/Source/CMSIS_RTOS_V2 -I../Middlewares/Third_Party/FreeRTOS/Source/porta
-ble/RVDS/ARM_CM4F -I../Drivers/CMSIS/RTOS2/Include -I../Drivers/CMSIS/Device/ST
-/STM32H7xx/Include -I../Drivers/CMSIS/Include -I.\RTE\_TactileGripper_H723VGH6 
--IE:\Software\Apps\Keil\Package\ARM\CMSIS\5.7.0\CMSIS\Core\Include -IE:\Softwar
-e\Apps\Keil\Package\Keil\STM32H7xx_DFP\3.1.1\Drivers\CMSIS\Device\ST\STM32H7xx\
-Include --predefine="__UVISION_VERSION SETA 534" --predefine="_RTE_ SETA 1" --p
-redefine="STM32H723xx SETA 1" --predefine="_RTE_ SETA 1" --list=startup_stm32h7
-23xx.lst startup_stm32h723xx.s
+ndicator/Inc -I../Application/TactileSensor/Inc -I../Platform/Inc -I../../Refer
+ence/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/Any/Inc -I../../R
+eference/H745_MCSDK_OS/MCSDK_v6.4.1-Full/MotorControl/MCSDK/MCLib/H7xx/Inc -I..
+/Drivers/CMSIS/DSP/Include -I../Drivers/STM32H7xx_HAL_Driver/Inc -I../Drivers/S
+TM32H7xx_HAL_Driver/Inc/Legacy -I../Middlewares/Third_Party/FreeRTOS/Source/inc
+lude -I../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2 -I../Middleware
+s/Third_Party/FreeRTOS/Source/portable/RVDS/ARM_CM4F -I../Drivers/CMSIS/RTOS2/I
+nclude -I../Drivers/CMSIS/Device/ST/STM32H7xx/Include -I../Drivers/CMSIS/Includ
+e -I.\RTE\_TactileGripper_H723VGH6 -IE:\Software\Apps\Keil\Package\ARM\CMSIS\5.
+7.0\CMSIS\Core\Include -IE:\Software\Apps\Keil\Package\Keil\STM32H7xx_DFP\3.1.1
+\Drivers\CMSIS\Device\ST\STM32H7xx\Include --predefine="__UVISION_VERSION SETA 
+534" --predefine="_RTE_ SETA 1" --predefine="STM32H723xx SETA 1" --predefine="_
+RTE_ SETA 1" --list=startup_stm32h723xx.lst startup_stm32h723xx.s
 
 
 
