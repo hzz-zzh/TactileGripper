@@ -23,8 +23,10 @@ DebugConfig/
 # 日志解析目录
 parsed_log/
 
-#工具目录
-tools/
+# 工具目录默认忽略，仅保留需要随工程分发的触觉可视化界面
+tools/*
+!tools/tactile_viewer/
+!tools/tactile_viewer/**
 
 # 多工程工作区文件
 *.uvmpw

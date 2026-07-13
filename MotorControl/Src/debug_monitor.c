@@ -23,12 +23,17 @@
 #define DEBUG_TX_TIMEOUT_MS    10U
 #define ADC_CAL_SAMPLES        2048U
 
+/* RS485用于连续触觉二进制流时，关闭homing和position周期文本输出。 */
+#define DEBUG_RUNTIME_OUTPUT_ENABLE 0U
+
 extern UART_HandleTypeDef huart10;
 extern ADC_HandleTypeDef hadc1;
 extern ADC_HandleTypeDef hadc2;
 extern TIM_HandleTypeDef htim1;
 
+#if DEBUG_RUNTIME_OUTPUT_ENABLE
 static osThreadId_t debugTaskHandle;
+#endif
 static uint16_t busCurrentZeroRaw = 32768U;
 
 typedef struct
@@ -693,6 +698,7 @@ void DebugMonitor_RunPwmBaselineVectorInspection(uint32_t reset_flags)
   }
 }
 
+#if DEBUG_RUNTIME_OUTPUT_ENABLE
 static int32_t DebugMonitor_ToMilli(float value)
 {
   float scaled = value * 1000.0f;
@@ -799,6 +805,7 @@ static bool DebugMonitor_ShouldPrintHoming(
 
   return false;
 }
+#endif
 
 void DebugMonitor_RunCurrentAdcCalibration(void)
 {
@@ -872,6 +879,7 @@ void DebugMonitor_RunCurrentAdcCalibration(void)
   }
 }
 
+#if DEBUG_RUNTIME_OUTPUT_ENABLE
 static void DebugMonitor_Task(void *argument)
 {
   uint32_t next = osKernelGetTickCount();
@@ -1006,9 +1014,11 @@ static void DebugMonitor_Task(void *argument)
     (void)osDelayUntil(next);
   }
 }
+#endif
 
 void DebugMonitor_CreateTask(void)
 {
+#if DEBUG_RUNTIME_OUTPUT_ENABLE
   const osThreadAttr_t attributes = {
     .name = "debugUart2",
     .stack_size = 512U * 4U,
@@ -1017,4 +1027,7 @@ void DebugMonitor_CreateTask(void)
 
   debugTaskHandle = osThreadNew(DebugMonitor_Task, NULL, &attributes);
   (void)debugTaskHandle;
+#else
+  /* 保留创建接口，当前不启动周期日志任务，避免文本插入触觉二进制帧流。 */
+#endif
 }

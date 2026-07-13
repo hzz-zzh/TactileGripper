@@ -58,15 +58,33 @@ void DebugUartTransport_InitRs485(UART_HandleTypeDef *huart,
 bool DebugUartTransport_Write(const char *text, uint32_t timeout_ms)
 {
   size_t length;
-  HAL_StatusTypeDef result;
-  bool mutexLocked = false;
-  uint32_t mutexTimeoutTicks = timeout_ms;
 
-  if ((debugUart == NULL) || (text == NULL))
+  if (text == NULL)
   {
     return false;
   }
   length = strlen(text);
+  if (length > UINT16_MAX)
+  {
+    return false;
+  }
+  return DebugUartTransport_WriteBuffer((const uint8_t *)text,
+                                        (uint16_t)length,
+                                        timeout_ms);
+}
+
+bool DebugUartTransport_WriteBuffer(const uint8_t *data,
+                                    uint16_t length,
+                                    uint32_t timeout_ms)
+{
+  HAL_StatusTypeDef result;
+  bool mutexLocked = false;
+  uint32_t mutexTimeoutTicks = timeout_ms;
+
+  if ((debugUart == NULL) || (data == NULL))
+  {
+    return false;
+  }
   if (length == 0U)
   {
     return true;
@@ -89,8 +107,7 @@ bool DebugUartTransport_Write(const char *text, uint32_t timeout_ms)
     HAL_GPIO_WritePin(debugRs485DePort, debugRs485DePin, GPIO_PIN_SET);
   }
   debugUartTxActive = 1U;
-  result = HAL_UART_Transmit(debugUart, (const uint8_t *)text,
-                             (uint16_t)length, timeout_ms);
+  result = HAL_UART_Transmit(debugUart, data, length, timeout_ms);
   debugUartTxQuietUntilTick = HAL_GetTick() + 2U;
   DebugUartTransport_FlushRx(debugUart);
   debugUartTxActive = 0U;

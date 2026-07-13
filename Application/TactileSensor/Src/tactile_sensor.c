@@ -17,10 +17,19 @@
 #define TACTILE_STATS_PERIOD_MS             2000U
 #define TACTILE_STATS_OUTPUT_ENABLE         0U
 #define TACTILE_TX_TIMEOUT_MS               2U
-#define TACTILE_DEBUG_TIMEOUT_MS            10U
+#define TACTILE_DEBUG_TIMEOUT_MS            20U
 #define TACTILE_DMA_BUFFER_SIZE             512U
 #define TACTILE_UART1_DMA_BUFFER_ADDR       0x24000100UL
 #define TACTILE_UART2_DMA_BUFFER_ADDR       0x24000300UL
+#define TACTILE_STREAM_VERSION              1U
+#define TACTILE_STREAM_SENSOR_COUNT         4U
+#define TACTILE_STREAM_HEADER_SIZE          16U
+#define TACTILE_STREAM_SENSOR_SIZE          120U
+#define TACTILE_STREAM_CRC_SIZE             2U
+#define TACTILE_STREAM_FRAME_SIZE           \
+  (TACTILE_STREAM_HEADER_SIZE + \
+   TACTILE_STREAM_SENSOR_COUNT * TACTILE_STREAM_SENSOR_SIZE + \
+   TACTILE_STREAM_CRC_SIZE)
 #define TACTILE_UART_CLEAR_FLAGS            (UART_CLEAR_OREF | UART_CLEAR_NEF | \
                                               UART_CLEAR_FEF | UART_CLEAR_PEF | \
                                               UART_CLEAR_RTOF | UART_CLEAR_IDLEF)
@@ -382,102 +391,131 @@ static uint32_t TactileSensor_Rate10(uint32_t delta,
 }
 #endif
 
-static void TactileSensor_FormatForce(float force_n,
-                                      char *text,
-                                      uint16_t capacity)
+static void TactileSensor_StreamAppendU16(uint8_t *frame,
+                                          uint16_t *offset,
+                                          uint16_t value)
 {
-  int32_t milli_newton;
-  uint32_t magnitude;
-  const char *sign;
-
-  if ((text == NULL) || (capacity == 0U))
-  {
-    return;
-  }
-
-  milli_newton = (force_n >= 0.0f) ?
-    (int32_t)(force_n * 1000.0f + 0.5f) :
-    (int32_t)(force_n * 1000.0f - 0.5f);
-  sign = (milli_newton < 0) ? "-" : "";
-  magnitude = (milli_newton < 0) ?
-    (uint32_t)(-(int64_t)milli_newton) : (uint32_t)milli_newton;
-  (void)snprintf(text, capacity, "%s%lu.%03lu",
-                 sign,
-                 (unsigned long)(magnitude / 1000U),
-                 (unsigned long)(magnitude % 1000U));
+  frame[*offset] = (uint8_t)value;
+  frame[*offset + 1U] = (uint8_t)(value >> 8U);
+  *offset += 2U;
 }
 
-static void TactileSensor_DumpForceAndProximity(void)
+static void TactileSensor_StreamAppendU32(uint8_t *frame,
+                                          uint16_t *offset,
+                                          uint32_t value)
+{
+  frame[*offset] = (uint8_t)value;
+  frame[*offset + 1U] = (uint8_t)(value >> 8U);
+  frame[*offset + 2U] = (uint8_t)(value >> 16U);
+  frame[*offset + 3U] = (uint8_t)(value >> 24U);
+  *offset += 4U;
+}
+
+static void TactileSensor_StreamAppendFloat(uint8_t *frame,
+                                            uint16_t *offset,
+                                            float value)
+{
+  uint32_t raw;
+
+  memcpy(&raw, &value, sizeof(raw));
+  TactileSensor_StreamAppendU32(frame, offset, raw);
+}
+
+static uint16_t TactileSensor_StreamCrc16(const uint8_t *data,
+                                          uint16_t length)
+{
+  uint16_t crc = 0xFFFFU;
+  uint16_t index;
+
+  for (index = 0U; index < length; index++)
+  {
+    uint8_t bit;
+
+    crc ^= data[index];
+    for (bit = 0U; bit < 8U; bit++)
+    {
+      crc = ((crc & 1U) != 0U) ?
+        (uint16_t)((crc >> 1U) ^ 0xA001U) : (uint16_t)(crc >> 1U);
+    }
+  }
+  return crc;
+}
+
+static void TactileSensor_StreamAppendUnit(uint8_t *frame,
+                                            uint16_t *offset,
+                                            const tactile_unit_data_t *unit)
+{
+  uint32_t taxel_index;
+
+  TactileSensor_StreamAppendU16(frame, offset, unit->valid_mask);
+  TactileSensor_StreamAppendU16(frame, offset,
+                                unit->tangential_direction_deg);
+  TactileSensor_StreamAppendU32(frame, offset, unit->proximity_raw);
+  TactileSensor_StreamAppendU32(frame, offset,
+                                (uint32_t)unit->proximity_delta);
+  TactileSensor_StreamAppendFloat(frame, offset, unit->normal_force_n);
+  TactileSensor_StreamAppendFloat(frame, offset,
+                                  unit->tangential_force_n);
+  for (taxel_index = 0U;
+       taxel_index < TACTILE_TAXEL_COUNT_PER_UNIT;
+       taxel_index++)
+  {
+    TactileSensor_StreamAppendU32(frame, offset,
+                                  (uint32_t)unit->taxel_delta[taxel_index]);
+  }
+}
+
+static void TactileSensor_OutputRawFrame(uint32_t *last_sequence)
 {
   gripper_tactile_data_t data;
-  char force_text[8][16];
-  char line[512];
+  uint8_t frame[TACTILE_STREAM_FRAME_SIZE];
+  uint16_t offset = 0U;
+  uint16_t crc;
 
-  if (!TactileDataStore_GetLatest(&data))
+  if ((last_sequence == NULL) ||
+      !TactileDataStore_GetLatest(&data) ||
+      (data.sequence == *last_sequence))
   {
     return;
   }
 
-  /* 输出顺序与数据结构映射一致：左/右指内均先0x36、后0x37。 */
-  TactileSensor_FormatForce(
-    data.finger[TACTILE_FINGER_LEFT]
-        .unit[TACTILE_UNIT_LOWER].normal_force_n,
-    force_text[0], sizeof(force_text[0]));
-  TactileSensor_FormatForce(
-    data.finger[TACTILE_FINGER_LEFT]
-        .unit[TACTILE_UNIT_LOWER].tangential_force_n,
-    force_text[1], sizeof(force_text[1]));
-  TactileSensor_FormatForce(
-    data.finger[TACTILE_FINGER_LEFT]
-        .unit[TACTILE_UNIT_UPPER].normal_force_n,
-    force_text[2], sizeof(force_text[2]));
-  TactileSensor_FormatForce(
-    data.finger[TACTILE_FINGER_LEFT]
-        .unit[TACTILE_UNIT_UPPER].tangential_force_n,
-    force_text[3], sizeof(force_text[3]));
-  TactileSensor_FormatForce(
-    data.finger[TACTILE_FINGER_RIGHT]
-        .unit[TACTILE_UNIT_LOWER].normal_force_n,
-    force_text[4], sizeof(force_text[4]));
-  TactileSensor_FormatForce(
-    data.finger[TACTILE_FINGER_RIGHT]
-        .unit[TACTILE_UNIT_LOWER].tangential_force_n,
-    force_text[5], sizeof(force_text[5]));
-  TactileSensor_FormatForce(
-    data.finger[TACTILE_FINGER_RIGHT]
-        .unit[TACTILE_UNIT_UPPER].normal_force_n,
-    force_text[6], sizeof(force_text[6]));
-  TactileSensor_FormatForce(
-    data.finger[TACTILE_FINGER_RIGHT]
-        .unit[TACTILE_UNIT_UPPER].tangential_force_n,
-    force_text[7], sizeof(force_text[7]));
+  /* 帧头使用固定魔数，接收端可从其他调试文本中重新同步到二进制帧。 */
+  frame[offset++] = 'T';
+  frame[offset++] = 'A';
+  frame[offset++] = 'C';
+  frame[offset++] = '1';
+  frame[offset++] = TACTILE_STREAM_VERSION;
+  frame[offset++] = TACTILE_STREAM_SENSOR_COUNT;
+  TactileSensor_StreamAppendU16(frame, &offset,
+                                TACTILE_STREAM_FRAME_SIZE);
+  TactileSensor_StreamAppendU32(frame, &offset, data.sequence);
+  TactileSensor_StreamAppendU32(frame, &offset, data.timestamp_ms);
 
-  (void)snprintf(
-    line, sizeof(line),
-    "TACTILE,FORCE,seq=%lu,ts=%lu,L36,N=%s,T=%s,P=%lu,PD=%ld,L37,N=%s,T=%s,P=%lu,PD=%ld,R36,N=%s,T=%s,P=%lu,PD=%ld,R37,N=%s,T=%s,P=%lu,PD=%ld\r\n",
-    (unsigned long)data.sequence,
-    (unsigned long)data.timestamp_ms,
-    force_text[0], force_text[1],
-    (unsigned long)data.finger[TACTILE_FINGER_LEFT]
-                       .unit[TACTILE_UNIT_LOWER].proximity_raw,
-    (long)data.finger[TACTILE_FINGER_LEFT]
-              .unit[TACTILE_UNIT_LOWER].proximity_delta,
-    force_text[2], force_text[3],
-    (unsigned long)data.finger[TACTILE_FINGER_LEFT]
-                       .unit[TACTILE_UNIT_UPPER].proximity_raw,
-    (long)data.finger[TACTILE_FINGER_LEFT]
-              .unit[TACTILE_UNIT_UPPER].proximity_delta,
-    force_text[4], force_text[5],
-    (unsigned long)data.finger[TACTILE_FINGER_RIGHT]
-                       .unit[TACTILE_UNIT_LOWER].proximity_raw,
-    (long)data.finger[TACTILE_FINGER_RIGHT]
-              .unit[TACTILE_UNIT_LOWER].proximity_delta,
-    force_text[6], force_text[7],
-    (unsigned long)data.finger[TACTILE_FINGER_RIGHT]
-                       .unit[TACTILE_UNIT_UPPER].proximity_raw,
-    (long)data.finger[TACTILE_FINGER_RIGHT]
-              .unit[TACTILE_UNIT_UPPER].proximity_delta);
-  TactileSensor_Write(line);
+  /* 单元顺序固定为左36、左37、右36、右37，便于上位机直接映射。 */
+  TactileSensor_StreamAppendUnit(
+    frame, &offset,
+    &data.finger[TACTILE_FINGER_LEFT].unit[TACTILE_UNIT_LOWER]);
+  TactileSensor_StreamAppendUnit(
+    frame, &offset,
+    &data.finger[TACTILE_FINGER_LEFT].unit[TACTILE_UNIT_UPPER]);
+  TactileSensor_StreamAppendUnit(
+    frame, &offset,
+    &data.finger[TACTILE_FINGER_RIGHT].unit[TACTILE_UNIT_LOWER]);
+  TactileSensor_StreamAppendUnit(
+    frame, &offset,
+    &data.finger[TACTILE_FINGER_RIGHT].unit[TACTILE_UNIT_UPPER]);
+
+  if (offset != (TACTILE_STREAM_FRAME_SIZE - TACTILE_STREAM_CRC_SIZE))
+  {
+    return;
+  }
+  crc = TactileSensor_StreamCrc16(frame, offset);
+  TactileSensor_StreamAppendU16(frame, &offset, crc);
+  if (DebugUartTransport_WriteBuffer(frame, offset,
+                                     TACTILE_DEBUG_TIMEOUT_MS))
+  {
+    *last_sequence = data.sequence;
+  }
 }
 
 #if TACTILE_STATS_OUTPUT_ENABLE
@@ -773,6 +811,7 @@ static void TactileSensor_Task(void *argument)
     (TACTILE_STATS_PERIOD_MS * tick_frequency) / 1000U;
 #endif
   uint32_t next = osKernelGetTickCount();
+  uint32_t last_output_sequence = 0U;
 #if TACTILE_STATS_OUTPUT_ENABLE
   uint32_t stats_tick = next;
   uint32_t last_valid[TACTILE_SENSOR_PORT_COUNT]
@@ -810,7 +849,7 @@ static void TactileSensor_Task(void *argument)
     }
   }
   TactileSensor_Write(
-    "TACTILE,TASK,start,uart=1/2,addr=0x36/0x37,rate=40Hz\r\n");
+    "TACTILE,TASK,start,uart=1/2,addr=0x36/0x37,rate=40Hz,stream=binary-v1,frame=498B\r\n");
 
   for (;;)
   {
@@ -840,8 +879,8 @@ static void TactileSensor_Task(void *argument)
     TactileDataStore_BeginCycle();
     TactileSensor_RequestAddress(TACTILE_SENSOR_ADDRESS_36, timeout_ticks);
     TactileSensor_RequestAddress(TACTILE_SENSOR_ADDRESS_37, timeout_ticks);
-    /* 每轮四单元采样完成后输出力和接近觉，频率与40Hz采样频率一致。 */
-    TactileSensor_DumpForceAndProximity();
+    /* 仅在四个单元均更新后输出新帧，避免上位机重复显示旧序号。 */
+    TactileSensor_OutputRawFrame(&last_output_sequence);
 
     now = osKernelGetTickCount();
 #if TACTILE_STATS_OUTPUT_ENABLE

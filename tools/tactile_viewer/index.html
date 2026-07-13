@@ -1,0 +1,782 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>夹爪触觉实时监视器</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --page: #eef2f7;
+      --surface: #ffffff;
+      --surface-soft: #f5f7fa;
+      --text: #172033;
+      --muted: #657085;
+      --border: #d9e0ea;
+      --accent: #1769e0;
+      --accent-contrast: #ffffff;
+      --positive: #ef5b48;
+      --negative: #307edb;
+      --success: #16875d;
+      --danger: #cf3f4f;
+      --cell-bg: #edf1f6;
+      --shadow: 0 12px 30px rgba(29, 45, 73, 0.08);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --page: #0e1420;
+        --surface: #171f2d;
+        --surface-soft: #111925;
+        --text: #edf2fa;
+        --muted: #9eacc0;
+        --border: #2c384b;
+        --accent: #69a5ff;
+        --accent-contrast: #07111f;
+        --positive: #ff7867;
+        --negative: #65a7ff;
+        --success: #50c795;
+        --danger: #ff7887;
+        --cell-bg: #202a39;
+        --shadow: 0 14px 36px rgba(0, 0, 0, 0.24);
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      background: var(--page);
+      color: var(--text);
+      font-family: "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+    }
+
+    button { font: inherit; }
+
+    .app {
+      width: min(1480px, 100%);
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .title-group h1 {
+      margin: 0;
+      font-size: clamp(1.25rem, 2.2vw, 1.8rem);
+      font-weight: 650;
+    }
+
+    .title-group p {
+      margin: 5px 0 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 38px;
+      padding: 0 13px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      color: var(--muted);
+      background: var(--surface);
+    }
+
+    .status-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--muted);
+    }
+
+    .status-pill.connected { color: var(--success); }
+    .status-pill.connected .status-dot { background: var(--success); }
+    .status-pill.error { color: var(--danger); }
+    .status-pill.error .status-dot { background: var(--danger); }
+
+    .primary-button,
+    .secondary-button {
+      min-height: 40px;
+      padding: 0 17px;
+      border-radius: 10px;
+      border: 1px solid var(--accent);
+      cursor: pointer;
+      transition: transform 120ms ease, opacity 120ms ease;
+    }
+
+    .primary-button {
+      background: var(--accent);
+      color: var(--accent-contrast);
+    }
+
+    .secondary-button {
+      background: transparent;
+      color: var(--accent);
+    }
+
+    button:hover:not(:disabled) { transform: translateY(-1px); }
+    button:disabled { cursor: not-allowed; opacity: 0.45; }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .summary-item,
+    .sensor-card {
+      border: 1px solid var(--border);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .summary-item {
+      padding: 12px 14px;
+      border-radius: 12px;
+    }
+
+    .summary-label {
+      display: block;
+      color: var(--muted);
+      font-size: 0.78rem;
+      margin-bottom: 5px;
+    }
+
+    .summary-value {
+      font-size: 1.08rem;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .sensor-layout {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .sensor-card {
+      border-radius: 16px;
+      padding: 16px;
+      min-width: 0;
+    }
+
+    .sensor-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .sensor-name {
+      margin: 0;
+      font-size: 1.05rem;
+      font-weight: 650;
+    }
+
+    .validity {
+      padding: 4px 9px;
+      border-radius: 999px;
+      background: var(--surface-soft);
+      color: var(--muted);
+      font-size: 0.76rem;
+      white-space: nowrap;
+    }
+
+    .validity.valid { color: var(--success); }
+
+    .sensor-body {
+      display: grid;
+      grid-template-columns: minmax(230px, 1.2fr) minmax(210px, 0.8fr);
+      gap: 18px;
+      align-items: center;
+    }
+
+    .taxel-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 5px;
+      width: 100%;
+    }
+
+    .taxel {
+      --heat-percent: 0%;
+      --heat: var(--positive);
+      display: grid;
+      place-items: center;
+      aspect-ratio: 1;
+      min-width: 0;
+      border: 1px solid color-mix(in srgb, var(--heat) var(--heat-percent), var(--border));
+      border-radius: 7px;
+      background: color-mix(in srgb, var(--heat) var(--heat-percent), var(--cell-bg));
+      color: var(--text);
+      font-family: Consolas, "SFMono-Regular", monospace;
+      font-size: clamp(0.58rem, 1.12vw, 0.77rem);
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.04em;
+      overflow: hidden;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 9px;
+    }
+
+    .metric {
+      min-width: 0;
+      padding: 10px;
+      border-left: 2px solid var(--border);
+      background: var(--surface-soft);
+    }
+
+    .metric-label {
+      display: block;
+      color: var(--muted);
+      font-size: 0.75rem;
+      margin-bottom: 4px;
+    }
+
+    .metric-value {
+      display: block;
+      min-width: 0;
+      font-size: 1rem;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .direction-box {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 10px;
+      background: var(--surface-soft);
+    }
+
+    .direction-dial {
+      flex: 0 0 auto;
+      width: 46px;
+      height: 46px;
+      border: 1px solid var(--border);
+      border-radius: 50%;
+      position: relative;
+    }
+
+    .direction-arrow {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 2px;
+      height: 17px;
+      background: var(--accent);
+      transform-origin: 50% 100%;
+      transform: translate(-50%, -100%) rotate(0deg);
+    }
+
+    .direction-arrow::before {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: -1px;
+      width: 7px;
+      height: 7px;
+      border-left: 2px solid var(--accent);
+      border-top: 2px solid var(--accent);
+      transform: translateX(-50%) rotate(45deg);
+    }
+
+    .legend {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      margin-top: 15px;
+      color: var(--muted);
+      font-size: 0.78rem;
+    }
+
+    .legend-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .legend-swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+    }
+
+    .legend-swatch.negative { background: var(--negative); }
+    .legend-swatch.positive { background: var(--positive); }
+
+    .browser-warning {
+      display: none;
+      margin-bottom: 16px;
+      padding: 12px 14px;
+      border: 1px solid var(--danger);
+      border-radius: 12px;
+      color: var(--danger);
+      background: var(--surface);
+    }
+
+    @media (max-width: 1100px) {
+      .sensor-body { grid-template-columns: 1fr; }
+      .summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 760px) {
+      .app { padding: 12px; }
+      .topbar { align-items: flex-start; flex-direction: column; }
+      .actions { justify-content: flex-start; }
+      .sensor-layout { grid-template-columns: 1fr; }
+      .sensor-body { grid-template-columns: minmax(0, 1fr) minmax(190px, 0.72fr); }
+      .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 520px) {
+      .sensor-body { grid-template-columns: 1fr; }
+      .summary { grid-template-columns: 1fr 1fr; }
+      .summary-item:last-child { grid-column: 1 / -1; }
+      .actions { width: 100%; }
+      .status-pill { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <div class="title-group">
+        <h1>夹爪触觉实时监视器</h1>
+        <p>RS485 · 460800 baud · 二进制协议 v1</p>
+      </div>
+      <div class="actions">
+        <span id="connectionStatus" class="status-pill">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="connectionText">未连接</span>
+        </span>
+        <button id="connectButton" class="primary-button" type="button">连接串口</button>
+        <button id="disconnectButton" class="secondary-button" type="button" disabled>断开</button>
+      </div>
+    </header>
+
+    <div id="browserWarning" class="browser-warning" role="alert">
+      当前浏览器不支持 Web Serial，请使用最新版 Chrome 或 Edge，并通过 localhost 打开本页面。
+    </div>
+
+    <section class="summary" aria-label="数据流状态">
+      <div class="summary-item">
+        <span class="summary-label">帧序号</span>
+        <span id="sequenceValue" class="summary-value">—</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">设备时间</span>
+        <span id="timestampValue" class="summary-value">— ms</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">接收频率</span>
+        <span id="rateValue" class="summary-value">0.0 Hz</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">丢帧计数</span>
+        <span id="dropValue" class="summary-value">0</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">CRC 错误</span>
+        <span id="crcValue" class="summary-value">0</span>
+      </div>
+    </section>
+
+    <section id="sensorLayout" class="sensor-layout" aria-label="四片触觉传感器"></section>
+
+    <div class="legend" aria-label="阵列颜色图例">
+      <span class="legend-chip"><span class="legend-swatch negative"></span>负差值</span>
+      <span>颜色深度表示当前单片内的绝对值大小</span>
+      <span class="legend-chip"><span class="legend-swatch positive"></span>正差值</span>
+    </div>
+  </main>
+
+  <script>
+    "use strict";
+
+    const BAUD_RATE = 460800;
+    const MAGIC = [0x54, 0x41, 0x43, 0x31];
+    const FRAME_VERSION = 1;
+    const SENSOR_COUNT = 4;
+    const HEADER_SIZE = 16;
+    const SENSOR_SIZE = 120;
+    const FRAME_SIZE = 498;
+    const CRC_OFFSET = FRAME_SIZE - 2;
+    const SENSOR_NAMES = [
+      { code: "L36", name: "左指 · 下片 · 0x36" },
+      { code: "L37", name: "左指 · 上片 · 0x37" },
+      { code: "R36", name: "右指 · 下片 · 0x36" },
+      { code: "R37", name: "右指 · 上片 · 0x37" }
+    ];
+
+    const state = {
+      port: null,
+      reader: null,
+      readTask: null,
+      reading: false,
+      rxBuffer: new Uint8Array(0),
+      crcErrors: 0,
+      droppedFrames: 0,
+      lastSequence: null,
+      rateWindowStart: performance.now(),
+      rateFrameCount: 0,
+      rateHz: 0
+    };
+
+    const elements = {
+      connectButton: document.getElementById("connectButton"),
+      disconnectButton: document.getElementById("disconnectButton"),
+      connectionStatus: document.getElementById("connectionStatus"),
+      connectionText: document.getElementById("connectionText"),
+      browserWarning: document.getElementById("browserWarning"),
+      sequenceValue: document.getElementById("sequenceValue"),
+      timestampValue: document.getElementById("timestampValue"),
+      rateValue: document.getElementById("rateValue"),
+      dropValue: document.getElementById("dropValue"),
+      crcValue: document.getElementById("crcValue"),
+      sensorLayout: document.getElementById("sensorLayout")
+    };
+
+    function buildSensorCards() {
+      SENSOR_NAMES.forEach((sensor, sensorIndex) => {
+        const card = document.createElement("article");
+        card.className = "sensor-card";
+        card.dataset.sensorIndex = String(sensorIndex);
+
+        const cells = Array.from({ length: 25 }, (_, index) =>
+          `<div class="taxel" data-taxel="${index}" aria-label="第 ${Math.floor(index / 5) + 1} 行第 ${index % 5 + 1} 列">0</div>`
+        ).join("");
+
+        card.innerHTML = `
+          <div class="sensor-header">
+            <h2 class="sensor-name">${sensor.name}</h2>
+            <span class="validity" data-field="validity">等待数据</span>
+          </div>
+          <div class="sensor-body">
+            <div class="taxel-grid" role="grid" aria-label="${sensor.code} 5乘5原始阵列">
+              ${cells}
+            </div>
+            <div class="metrics">
+              <div class="metric">
+                <span class="metric-label">法向力</span>
+                <span class="metric-value" data-field="normalForce">— N</span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">切向力</span>
+                <span class="metric-value" data-field="tangentialForce">— N</span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">自接近原始值</span>
+                <span class="metric-value" data-field="proximityRaw">—</span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">自接近差值</span>
+                <span class="metric-value" data-field="proximityDelta">—</span>
+              </div>
+              <div class="direction-box">
+                <div class="direction-dial" aria-hidden="true">
+                  <span class="direction-arrow" data-field="directionArrow"></span>
+                </div>
+                <div>
+                  <span class="metric-label">切向力方向</span>
+                  <span class="metric-value" data-field="direction">—°</span>
+                </div>
+              </div>
+            </div>
+          </div>`;
+        elements.sensorLayout.appendChild(card);
+      });
+    }
+
+    function setConnectionStatus(kind, text) {
+      elements.connectionStatus.classList.remove("connected", "error");
+      if (kind) elements.connectionStatus.classList.add(kind);
+      elements.connectionText.textContent = text;
+    }
+
+    function concatBytes(left, right) {
+      const merged = new Uint8Array(left.length + right.length);
+      merged.set(left, 0);
+      merged.set(right, left.length);
+      return merged;
+    }
+
+    function findMagic(buffer) {
+      for (let index = 0; index <= buffer.length - MAGIC.length; index += 1) {
+        if (MAGIC.every((value, magicIndex) => buffer[index + magicIndex] === value)) {
+          return index;
+        }
+      }
+      return -1;
+    }
+
+    function crc16Modbus(data, length) {
+      let crc = 0xffff;
+      for (let index = 0; index < length; index += 1) {
+        crc ^= data[index];
+        for (let bit = 0; bit < 8; bit += 1) {
+          crc = (crc & 1) !== 0 ? (crc >>> 1) ^ 0xa001 : crc >>> 1;
+        }
+      }
+      return crc & 0xffff;
+    }
+
+    function parseSensor(view, startOffset) {
+      let offset = startOffset;
+      const validMask = view.getUint16(offset, true); offset += 2;
+      const direction = view.getUint16(offset, true); offset += 2;
+      const proximityRaw = view.getUint32(offset, true); offset += 4;
+      const proximityDelta = view.getInt32(offset, true); offset += 4;
+      const normalForce = view.getFloat32(offset, true); offset += 4;
+      const tangentialForce = view.getFloat32(offset, true); offset += 4;
+      const taxels = [];
+      for (let index = 0; index < 25; index += 1) {
+        taxels.push(view.getInt32(offset, true));
+        offset += 4;
+      }
+      return {
+        validMask,
+        direction,
+        proximityRaw,
+        proximityDelta,
+        normalForce,
+        tangentialForce,
+        taxels
+      };
+    }
+
+    function decodeFrame(frame) {
+      const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
+      const sequence = view.getUint32(8, true);
+      const timestamp = view.getUint32(12, true);
+      const sensors = [];
+      let offset = HEADER_SIZE;
+
+      for (let index = 0; index < SENSOR_COUNT; index += 1) {
+        sensors.push(parseSensor(view, offset));
+        offset += SENSOR_SIZE;
+      }
+      return { sequence, timestamp, sensors };
+    }
+
+    function consumeFrames(chunk) {
+      state.rxBuffer = concatBytes(state.rxBuffer, chunk);
+
+      while (state.rxBuffer.length >= MAGIC.length) {
+        const magicOffset = findMagic(state.rxBuffer);
+        if (magicOffset < 0) {
+          state.rxBuffer = state.rxBuffer.slice(Math.max(0, state.rxBuffer.length - 3));
+          return;
+        }
+        if (magicOffset > 0) state.rxBuffer = state.rxBuffer.slice(magicOffset);
+        if (state.rxBuffer.length < 8) return;
+
+        const headerView = new DataView(
+          state.rxBuffer.buffer,
+          state.rxBuffer.byteOffset,
+          state.rxBuffer.byteLength
+        );
+        const version = state.rxBuffer[4];
+        const sensorCount = state.rxBuffer[5];
+        const frameLength = headerView.getUint16(6, true);
+
+        if (version !== FRAME_VERSION ||
+            sensorCount !== SENSOR_COUNT ||
+            frameLength !== FRAME_SIZE) {
+          state.rxBuffer = state.rxBuffer.slice(1);
+          continue;
+        }
+        if (state.rxBuffer.length < FRAME_SIZE) return;
+
+        const frame = state.rxBuffer.slice(0, FRAME_SIZE);
+        const frameView = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
+        const expectedCrc = frameView.getUint16(CRC_OFFSET, true);
+        const actualCrc = crc16Modbus(frame, CRC_OFFSET);
+        if (actualCrc !== expectedCrc) {
+          state.crcErrors += 1;
+          elements.crcValue.textContent = String(state.crcErrors);
+          state.rxBuffer = state.rxBuffer.slice(1);
+          continue;
+        }
+
+        updateDashboard(decodeFrame(frame));
+        state.rxBuffer = state.rxBuffer.slice(FRAME_SIZE);
+      }
+    }
+
+    function formatForce(value) {
+      return Number.isFinite(value) ? `${value.toFixed(3)} N` : "无效";
+    }
+
+    function updateRate(now) {
+      state.rateFrameCount += 1;
+      const elapsed = now - state.rateWindowStart;
+      if (elapsed >= 500) {
+        state.rateHz = state.rateFrameCount * 1000 / elapsed;
+        state.rateFrameCount = 0;
+        state.rateWindowStart = now;
+        elements.rateValue.textContent = `${state.rateHz.toFixed(1)} Hz`;
+      }
+    }
+
+    function updateSequence(sequence) {
+      if (state.lastSequence !== null) {
+        const difference = (sequence - state.lastSequence) >>> 0;
+        if (difference > 1 && difference < 0x80000000) {
+          state.droppedFrames += difference - 1;
+          elements.dropValue.textContent = String(state.droppedFrames);
+        }
+      }
+      state.lastSequence = sequence;
+      elements.sequenceValue.textContent = String(sequence);
+    }
+
+    function updateSensorCard(sensorIndex, sensor) {
+      const card = elements.sensorLayout.querySelector(`[data-sensor-index="${sensorIndex}"]`);
+      const validity = card.querySelector('[data-field="validity"]');
+      const allValid = (sensor.validMask & 0x07) === 0x07;
+      validity.textContent = allValid ? "数据有效" : `有效位 0x${sensor.validMask.toString(16).padStart(4, "0")}`;
+      validity.classList.toggle("valid", allValid);
+
+      card.querySelector('[data-field="normalForce"]').textContent = formatForce(sensor.normalForce);
+      card.querySelector('[data-field="tangentialForce"]').textContent = formatForce(sensor.tangentialForce);
+      card.querySelector('[data-field="proximityRaw"]').textContent = String(sensor.proximityRaw);
+      card.querySelector('[data-field="proximityDelta"]').textContent = String(sensor.proximityDelta);
+
+      const directionValid = sensor.direction !== 0xffff && sensor.direction <= 359;
+      card.querySelector('[data-field="direction"]').textContent = directionValid ? `${sensor.direction}°` : "无效";
+      card.querySelector('[data-field="directionArrow"]').style.transform = directionValid
+        ? `translate(-50%, -100%) rotate(${sensor.direction}deg)`
+        : "translate(-50%, -100%) rotate(0deg)";
+      card.querySelector('[data-field="directionArrow"]').style.opacity = directionValid ? "1" : "0.2";
+
+      const maximum = Math.max(1, ...sensor.taxels.map(value => Math.abs(value)));
+      card.querySelectorAll(".taxel").forEach((cell, index) => {
+        const value = sensor.taxels[index];
+        const level = Math.max(0.08, Math.abs(value) / maximum);
+        cell.textContent = String(value);
+        cell.setAttribute("aria-label", `${SENSOR_NAMES[sensorIndex].code} 第 ${Math.floor(index / 5) + 1} 行第 ${index % 5 + 1} 列，原始值 ${value}`);
+        cell.style.setProperty("--heat-percent", `${(level * 72).toFixed(1)}%`);
+        cell.style.setProperty("--heat", value < 0 ? "var(--negative)" : "var(--positive)");
+      });
+    }
+
+    function updateDashboard(frame) {
+      setConnectionStatus("connected", "数据接收正常");
+      updateSequence(frame.sequence);
+      updateRate(performance.now());
+      elements.timestampValue.textContent = `${frame.timestamp} ms`;
+      frame.sensors.forEach((sensor, index) => updateSensorCard(index, sensor));
+    }
+
+    async function readLoop() {
+      try {
+        while (state.reading && state.port?.readable) {
+          state.reader = state.port.readable.getReader();
+          try {
+            while (state.reading) {
+              const { value, done } = await state.reader.read();
+              if (done) break;
+              if (value?.length) consumeFrames(value);
+            }
+          } finally {
+            state.reader.releaseLock();
+            state.reader = null;
+          }
+        }
+      } catch (error) {
+        if (state.reading) {
+          setConnectionStatus("error", `读取失败：${error.message}`);
+        }
+      } finally {
+        state.reading = false;
+        elements.connectButton.disabled = false;
+        elements.disconnectButton.disabled = true;
+      }
+    }
+
+    async function connectSerial() {
+      try {
+        state.port = await navigator.serial.requestPort();
+        await state.port.open({ baudRate: BAUD_RATE, dataBits: 8, stopBits: 1, parity: "none", flowControl: "none" });
+        state.rxBuffer = new Uint8Array(0);
+        state.crcErrors = 0;
+        state.droppedFrames = 0;
+        state.lastSequence = null;
+        state.reading = true;
+        state.rateWindowStart = performance.now();
+        state.rateFrameCount = 0;
+        elements.crcValue.textContent = "0";
+        elements.dropValue.textContent = "0";
+        elements.rateValue.textContent = "0.0 Hz";
+        elements.connectButton.disabled = true;
+        elements.disconnectButton.disabled = false;
+        setConnectionStatus("connected", "已连接，等待数据");
+        state.readTask = readLoop();
+      } catch (error) {
+        setConnectionStatus("error", error.name === "NotFoundError" ? "未选择串口" : `连接失败：${error.message}`);
+      }
+    }
+
+    async function disconnectSerial() {
+      state.reading = false;
+      try {
+        if (state.reader) await state.reader.cancel();
+        if (state.readTask) await state.readTask;
+        if (state.port) await state.port.close();
+      } catch (error) {
+        setConnectionStatus("error", `断开失败：${error.message}`);
+        return;
+      } finally {
+        state.reader = null;
+        state.readTask = null;
+        state.port = null;
+        elements.connectButton.disabled = false;
+        elements.disconnectButton.disabled = true;
+      }
+      setConnectionStatus("", "未连接");
+    }
+
+    buildSensorCards();
+
+    if (!("serial" in navigator)) {
+      elements.browserWarning.style.display = "block";
+      elements.connectButton.disabled = true;
+    } else {
+      elements.connectButton.addEventListener("click", connectSerial);
+      elements.disconnectButton.addEventListener("click", disconnectSerial);
+      navigator.serial.addEventListener("disconnect", event => {
+        if (event.port === state.port || event.target === state.port) {
+          disconnectSerial();
+        }
+      });
+    }
+  </script>
+</body>
+</html>
